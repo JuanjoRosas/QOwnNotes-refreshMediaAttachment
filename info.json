@@ -1,0 +1,10 @@
+{
+  "name": "Refesh Media Attachments",
+  "identifier": "refresh-media-attachment",
+  "script": "refresh-media-attachment.qml",
+  "authors": ["@JuanjoRosas"],
+  "platforms": ["windows"],
+  "version": "0.0.1",
+  "minAppVersion": "17.06.2",
+  "description" : "Actualiza las rutas de las carpetas de multimedia y de acrchivos adjuntos"
+}
