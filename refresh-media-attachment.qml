@@ -73,10 +73,45 @@ Script {
         return pPathArray[pPathArray.length - 1] == pExpectedValue;
     }
 
-    function updateAttachmentFolder(pNewPath){
-        // \!?(\[[^\r\n\]]+\]\([^\r\n\)]+\))|(\<a[^\>]*(\s|\")href\s*\=\s*\"[^\"]*\"\>)
-        //TODO: HACERLO XD
-
+    function updateAttachmentFolder(pNoteContent,pNewPath){
+        var newNoteContent = pNoteContent;
+        var attachmentLinePattern = "\!?(\[[^\r\n\]]+\]\([^\r\n\)]+\))|(\<a[^\>]*(\s|\")href\s*\=\s*\"[^\"]*\"\>)";
+        var attachmentLineRegex = RegExp(attachmentLinePattern, "g");
+        var imgFromMDCheckPattern = "^\!";
+        var imgFromMDCheckRegex = RegExp(imgFromMDCheckPattern, "g");
+        var escapedSeparator = escapeRegExp(separator);
+        var attachmentFolderPathPattern = "^.*?"+ escapedSeparator + attachmentFolderName + "(?=("+ escapedSeparator +"|$))";
+        var attachmentFolderPathRegex = RegExp(attachmentFolderPathPattern, "g");
+        var attachmentLine;
+        var pathFromMD = "";
+        var pathFromHTML = "";
+        var attachmentPath = "";
+        var subPathToReplace = "";
+        var newAttachmentPath = "";
+        var newAttachmentLine = "";
+        while((attachmentLine = attachmentLineRegex.exec(pNoteContent))!=null){
+            if(imgFromMDCheckRegex.exec(attachmentLine) != null){
+                pathFromMD = getPathFromMD(attachmentLine[0])
+                pathFromHTML = getPathFromHTML(attachmentLine[0])
+                if(pathFromMD != null && pathFromHTML == null){
+                    attachmentPath = pathFromMD;
+                }else if(pathFromMD == null && pathFromHTML != null){
+                    attachmentPath = pathFromHTML;
+                }else{
+                    script.informationMessageBox("La línea de archivo adjunto '" + attachmentLine[0] + "' presenta ambigüedad en su ruta.", "Error");
+                    return null;
+                }
+                subPathToReplace = attachmentFolderPathRegex.exec(attachmentPath);
+                if(subPathToReplace == null){
+                    script.informationMessageBox("La línea de archivo adjunto '" + attachmentLine[0] + "' no presenta una ruta con la carpeta '" + attachmentFolderName +"'.", "Error");
+                    return null;
+                }
+                newAttachmentPath = attachmentPath.replace(subPathToReplace, pNewPath);
+                newAttachmentLine = attachmentLine[0].replace(attachmentPath,newAttachmentPath);
+                newNoteContent = newNoteContent.replace(attachmentLine[0],newAttachmentLine);
+            }
+        }
+        return newNoteContent;
     }
 
     function customActionInvoked(action) {
@@ -98,7 +133,8 @@ Script {
                 return false;
             }
 
-
+            //TODO: Update media
+            //TODO: Update attachment
         }
     }
 
@@ -125,5 +161,9 @@ Script {
         }
         else
             return null;
+    }
+
+    function escapeRegExp(str) {
+      return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 }
