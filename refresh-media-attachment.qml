@@ -70,54 +70,18 @@ Script {
     }
 
     function checkPathEnding(pPath, pExpectedValue){
-        var pPathArray = pPath.split(separator);
-        return pPathArray[pPathArray.length - 1] == pExpectedValue;
+        let pPathArray = pPath.split(separator);
+        return pPathArray[pPathArray.length - 1] === pExpectedValue;
     }
 
     function checkPathBeginnig(pPath, pExpectedValue){
-        var pPathArray = pPath.split(separator);
-        return pPathArray[0] == pExpectedValue;
-    }
-
-    function updateMediaFolder(pNoteContent,pNewPath){
-        var newNoteContent = pNoteContent;
-        var imgLineRegex = /(?:\!\[[^\r\n\]]+\]\([^\r\n\)]+\))|(?:\<img[^\>]*(?:\s|\"|\n)src\s*\=\s*\"[^\"]*\"[^\>]*\/\>)/g;
-        var escapedSeparator = escapeRegExp(separator);
-        var imgFolderPathPattern = "^.*?"+ escapedSeparator + mediaFolderName + "(?=("+ escapedSeparator +"|$))";
-        var imgFolderPathRegex = RegExp(imgFolderPathPattern, "");
-        var imgLine;
-        var pathFromMD = "";
-        var pathFromHTML = "";
-        var imgPath = "";
-        var subPathToReplace = "";
-        var newImgPath = "";
-        var newImgLine;
-        while((imgLine = imgLineRegex.exec(pNoteContent)) !== null){
-            pathFromMD = getPathFromMD(imgLine[0]);
-            pathFromHTML = getPathFromHTML(imgLine[0]);
-            if(pathFromMD != null && pathFromHTML == null){
-                imgPath = pathFromMD;
-            }else if(pathFromMD == null && pathFromHTML != null){
-                imgPath = pathFromHTML;
-            }else{
-                script.informationMessageBox("La línea de multimedia '" + imgLine[0].slice(1) + "' presenta ambigüedad en su ruta.", "Error");
-                return null;
-            }
-            subPathToReplace = imgPath.match(imgFolderPathRegex);
-            if(subPathToReplace == null){
-                script.informationMessageBox("La línea de multimedia '" + imgLine[0].slice(1) + "' no presenta una ruta con la carpeta '" + mediaFolderName +"'.", "Error");
-                return null;
-            }
-            newImgPath = imgPath.replace(subPathToReplace[0], pNewPath);
-            newImgLine = imgLine[0].replace(imgPath,newImgPath);
-            newNoteContent = newNoteContent.replace(imgLine[0],newImgLine);
-        }
-        return newNoteContent;
+        let pPathArray = pPath.split(separator);
+        return pPathArray[0] === pExpectedValue;
     }
 
     function updateAttachmentFolder(pNoteContent,pNewPath){
-        var newNoteContent = pNoteContent;
-        var attachmentLineRegex = /(?:\!?\[[^\r\n\]]+\]\([^\r\n\)]+\))|(?:\<a[^\>]*(?:\s|\"|\n)href\s*\=\s*\"[^\"]*\"[^\>]*\>)/g;
+        let newNoteContent = pNoteContent;
+        let attachmentLineRegex = /(?:\!?\[[^\r\n\]]+\]\([^\r\n\)]+\))|(?:\<a[^\>]*(?:\s|\"|\n)href\s*\=\s*\"[^\"]*\"[^\>]*\>)/g;
         var imgFromMDCheckRegex = /^\!/;
         var escapedSeparator = escapeRegExp(separator);
         var attachmentFolderPathPattern = "^.*?"+ escapedSeparator + attachmentFolderName + "(?=("+ escapedSeparator +"|$))";
@@ -155,22 +119,22 @@ Script {
     }
 
     function customActionInvoked(action) {
-        if (action == refreshFoldersActionId) {
+        if (action === refreshFoldersActionId) {
             //Current Note
-            var curNote = script.currentNote();
-            var curNoteContent = curNote.noteText
+            let curNote = script.currentNote();
+            let curNoteContent = curNote.noteText
 
             //Select media folder path
-            var mediaFolder = askUserToSelectItemInArray("Seleccione carpeta multimedia","Seleccione la carpeta multimedia por la que se desean actualizar las rutas.",mediaPaths);
-            if(mediaFolder == "") return false;
+            let mediaFolder = askUserToSelectItemInArray("Seleccione carpeta multimedia","Seleccione la carpeta multimedia por la que se desean actualizar las rutas.",mediaPaths);
+            if(mediaFolder === "") return false;
             if (!checkPathEnding(mediaFolder,mediaFolderName)){
                 script.informationMessageBox("La ultima carpeta de la ruta " + mediaFolder + " debe ser: " + mediaFolderName, "Error");
                 return false;
             }
 
             //Select media folder path
-            var attachmentFolder = askUserToSelectItemInArray("Seleccione carpeta de adjuntos","Seleccione la carpeta de adjuntos por la que se desean actualizar las rutas.",attachmentPaths);
-            if(attachmentFolder == "") return false;
+            let attachmentFolder = askUserToSelectItemInArray("Seleccione carpeta de adjuntos","Seleccione la carpeta de adjuntos por la que se desean actualizar las rutas.",attachmentPaths);
+            if(attachmentFolder === "") return false;
             if (!checkPathEnding(attachmentFolder,attachmentFolderName)){
                 script.informationMessageBox("La ultima carpeta de la ruta " + attachmentFolder + " debe ser: " + attachmentFolderName, "Error");
                 return false;
@@ -191,9 +155,79 @@ Script {
         }
     }
 
-    function getPathFromMD(pString){
-        var pathContainerRegex = /\([^\r\n\)]+\)/;
-        var result = pString.match(pathContainerRegex);
+    function updateMediaFolder(pNoteContent,pNewPath){
+        const mediaLineRegex = /(?:\!\[[^\r\n\]]+\]\([^\r\n\)]+\))|(?:\<img[^\>]*(?:\s|\"|\n)src\s*\=\s*\"[^\"]*\"[^\>]*\/\>)/g;
+        const mediaLineFilter = (content, match)=>{return !isInsideIgnoreSection(content,match.index)};
+        const mediaLines = extractMatches(pNoteContent,mediaLineRegex,mediaLineFilter);
+        const escapedSeparator = escapeRegExp(separator);
+        let newNoteContent = pNoteContent;
+
+        for (const mediaLine of mediaLines){
+            const mediaSrc = resolveAttachmentSrc(mediaLine.line);
+            if (mediaSrc === null) return null;
+
+            const subpathToReplace = getSubpathToReplace(mediaSrc);
+            if (subpathToReplace === null) {
+                script.informationMessageBox("La línea de multimedia '" + img.line.slice(1) + "' no presenta una ruta con la carpeta '" + mediaFolderName + "'.", "Error");
+                return null;
+            }
+
+            const newMediaSrc = mediaSrc.replace(subpathToReplace, pNewPath);
+            const newMediaLine = mediaLine.replace(mediaSrc,newMediaSrc);
+            newNoteContent = newNoteContent.replace(mediaLine,newMediaLine);
+        }
+
+        return newNoteContent;
+    }
+
+    function extractMatches(pContent, pRegex, pMatchFilter) {
+        const matches = [];
+        let match;
+
+        while ((match = pRegex.exec(pContent)) !== null) {
+            if (pMatchFilter(pContent, match)) {
+                matches.push({ line: match[0], index: match.index });
+            }
+        }
+
+        return matches;
+    }
+
+    function getSubpathToReplace(pPath) {
+        const escapedSeparator = escapeRegExp(separator);
+        const pattern = "^.*?" + escapedSeparator + mediaFolderName + "(?=(" + escapedSeparator + "|$))";
+        const regex = new RegExp(pattern, "");
+        const match = pPath.match(regex);
+        return match ? match[0] : null;
+    }
+
+    function isInsideIgnoreSection(pContent, pPosition) {
+        const startTag = "<!-- ignoreSection -->";
+        const endTag = "<!-- \\ignoreSection -->";
+
+        let lastStart = pContent.lastIndexOf(startTag, pPosition);
+        let lastEnd = pContent.lastIndexOf(endTag, pPosition);
+
+        return lastStart !== -1 && (lastEnd === -1 || lastStart > lastEnd);
+    }
+
+    function resolveAttachmentSrc(pSubstring) {
+        const pathFromMD = getMDAttachmentSrc(pSubstring);
+        const pathFromHTML = getHTMLAttachmentTagSrc(pSubstring);
+
+        if (pathFromMD !== null && pathFromHTML === null) {
+            return pathFromMD;
+        } else if (pathFromMD === null && pathFromHTML !== null) {
+            return pathFromHTML;
+        } else {
+            script.informationMessageBox("La línea '" + pSubstring.slice(1) + "' presenta ambigüedad en su recurso de origen.", "Error");
+            return null;
+        }
+    }
+
+    function getMDAttachmentSrc(pString){
+        let pathContainerRegex = /\([^\r\n\)]+\)/;
+        let result = pString.match(pathContainerRegex);
         if(result!==null){
             return result[0].slice(1,-1);
         }
@@ -201,11 +235,11 @@ Script {
             return null;
     }
 
-    function getPathFromHTML(pString){
-        var pathContainerRegex = /(\s|\")(href|src)\s*\=\s*\"[^\"]*\"/;
-        var result = pString.match(pathContainerRegex);
+    function getHTMLAttachmentTagSrc(pString){
+        let pathContainerRegex = /(\s|\")(href|src)\s*\=\s*\"[^\"]*\"/;
+        let result = pString.match(pathContainerRegex);
         if(result!==null){
-            var pathRegex = /\"[^\"]*\"(?=$)/;
+            let pathRegex = /\"[^\"]*\"(?=$)/;
             result = result[0].match(pathRegex);
             return result[0].slice(1,-1);
         }
