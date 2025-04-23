@@ -14,8 +14,7 @@ Script {
     property string refreshFoldersActionId;
     property variant mediaPaths;
     property variant attachmentPaths;
-    property variant tagsContainerClass;
-    property variant usedTagsContainer;
+    property variant tagsContainer;
     property variant ignoringTag;
 
     property variant settingsVariables: [
@@ -61,80 +60,124 @@ Script {
         }
     ];
 
-    function init() {
-        tagsContainerClass = class {
-            constructor(){
-                this.openingPattern = null;
-                this.closingPattern = null;
-                this.tagOpeningPrefixPattern = null;
-                this.tagClosingPrefixPattern = null;
-                this.tagSeparatorPattern = null;
-                this.tagPattern = '[\\w]';
-            }
-            setOpeningPattern(pattern){
-                this.openingPattern = pattern;
-                return this;
-            }
-            setClosingPattern(pattern){
-                this.closingPattern = pattern;
-                return this;
-            }
-            setTagOpeningPrefixPattern(pattern){
-                this.tagOpeningPrefixPattern = pattern;
-                return this;
-            }
-            setTagClosingPrefixPattern(pattern){
-                this.tagClosingPrefixPattern = pattern;
-                return this;
-            }
-            setTagSeparatorPattern(pattern){
-                this.tagSeparatorPattern = pattern;
-                return this;
-            }
-            getTagSearchingRegex(tag,prefix){
-                const pattern = `${this.openingPattern}(?:${this.tagSeparatorPattern}+(?:${this.tagOpeningPrefixPattern}|${this.tagClosingPrefixPattern})${this.tagPattern})*${this.tagSeparatorPattern}+${prefix}${tag}(?:${this.tagSeparatorPattern}+(?:${this.tagOpeningPrefixPattern}|${this.tagClosingPrefixPattern})${this.tagPattern})*${this.tagSeparatorPattern}+${this.closingPattern}`;
-                return new RegExp(pattern, "g");
-            }
-            getOpenningTagSearchingRegex(tag){
-                return getTagSearchingRegex(tag,this.tagOpeningPrefixPattern);
-            }
-            getOpenningTagSearchingRegex(tag){
-                return getTagSearchingRegex(tag,this.tagClosingPrefixPattern);
-            }
-            getContainerSearchingRegex(){
-                const pattern = `${this.openingPattern}(?:${this.tagSeparatorPattern}+(?:${this.tagOpeningPrefixPattern}|${this.tagClosingPrefixPattern})${this.tagPattern})*${this.tagSeparatorPattern}+${this.closingPattern}`;
-                return new RegExp(pattern, "g");
-            }
-            addTagToContainer(containerString,tag,prefix,tagSeparator=null){
-                const separatorRegex = new RegExp(this.tagSeparatorPattern,'g');
-                const lastSeparator = lastMatch(containerString,separatorRegex);
-                const closingRegex = new RegExp(this.closingPattern,'g');
-                const closing = containerString.match(closingRegex)[0];
-                const closingSubstringRegex = new RegExp(`${this.tagSeparatorPattern}?${this.closingPattern}`,'g');
-                const closingSubstring = containerString.match(closingSubstringRegex)[0];
-                return containerString.replace(closingSubstring,`${lastSeparator?lastSeparator:tagSeparator}${prefix}${tag}${tagSeparator?tagSeparator:lastSeparator}${closing}`)
-            }
-        };
-        usedTagsContainer = {
-            instance: new tagsContainerClass(); //TODO
+    function TagContainer(){
+        this.openingPattern = null;
+        this.opening = null;
+
+        this.closingPattern = null;
+        this.closing = null;
+
+        this.tagSeparatorPattern = null;
+        this.tagSeparator = null;
+
+        this.tagOpeningPrefixPattern = null;
+        this.tagOpeningPrefix = null;
+
+        this.tagClosingPrefixPattern = null;
+        this.tagClosingPrefix = null;
+
+        this.tagPattern = '[\\w]';
+
+        this.setOpening = function(pattern,defaultValue){
+            this.openingPattern = pattern;
+            this.opening = defaultValue;
+            return this;
         }
-        ignoringTag = {
-            container: {
-                tagOpeningPrefix: '',
-                tagClosingPrefix: '/',
-                oppeningPattern: '\\<\\!(\\-{2})',
-                tagPattern: `(?:\\s+)(${tagOpeningPrefix==''?tagOpeningPrefix:`\\:${tagOpeningPrefix}`}|${tagClosingPrefix==''?tagClosingPrefix:`\\${tagClosingPrefix}`})`,
-                regex: (tag, prefix)=>{
+        this.setClosing = function(pattern,defaultValue){
+            this.closingPattern = pattern;
+            this.closing = defaultValue;
+            return this;
+        }
+        this.setTagSeparator = function(pattern,defaultValue){
+            this.tagSeparatorPattern = pattern;
+            this.tagSeparator = defaultValue;
+            return this;
+        }
+        this.setTagOpeningPrefix = function(value){
+            this.tagOpeningPrefix = value;
+            this.tagOpeningPrefixPattern = escapeRegExp(this.tagOpeningPrefix);
+            return this;
+        }
+        this.setTagClosingPrefix = function(value){
+            this.tagClosingPrefix = value;
+            this.tagClosingPrefixPattern = escapeRegExp(this.tagClosingPrefix);
+            return this;
+        }
 
-                }
-            },
-            containerRegex: /\<\!(\-{2})(?:\s+\/?[\w]+)*\s+\1\>/,
-            open:/\<\!(\-{2})(?:\s+\/?[\w]+)*\s+ignoreAttchmentUpdating\s+(?:\/?[\w]+\s+)*\1\>/,
-            close:/\<\!(\-{2})(?:\s+\/?[\w]+)*\s+\/ignoreAttchmentUpdating\s+(?:\/?[\w]+\s+)*\1\>/,
-            addOppeningTag: (originalContainer, tag) => {
+        this.getSeparatorRegex = function(){
+            return new RegExp(this.tagSeparatorPattern,'g');
+        }
+        this.getClosingRegex = function(){
+            return new RegExp(this.closingPattern,'g');
+        }
 
-            }
+        this.getTagSearchingRegex = function(tag,prefix){
+            const pattern = `${this.openingPattern}(?:${this.tagSeparatorPattern}+(?:${this.tagOpeningPrefixPattern}|${this.tagClosingPrefixPattern})${this.tagPattern})*${this.tagSeparatorPattern}+${prefix}${tag}(?:${this.tagSeparatorPattern}+(?:${this.tagOpeningPrefixPattern}|${this.tagClosingPrefixPattern})${this.tagPattern})*${this.tagSeparatorPattern}+${this.closingPattern}`;
+            return new RegExp(pattern, "g");
+        }
+        this.getOpeningTagSearchingRegex = function(tag){
+            return getTagSearchingRegex(tag,this.tagOpeningPrefixPattern);
+        }
+        this.getClosingTagSearchingRegex = function(tag){
+            return getTagSearchingRegex(tag,this.tagClosingPrefixPattern);
+        }
+
+        this.getContainerSearchingRegex = function(){
+            const pattern = `${this.openingPattern}(?:${this.tagSeparatorPattern}+(?:${this.tagOpeningPrefixPattern}|${this.tagClosingPrefixPattern})${this.tagPattern})*${this.tagSeparatorPattern}+${this.closingPattern}`;
+            return new RegExp(pattern, "g");
+        }
+
+        this.addTagToContainer = function(containerString,tag,prefix){
+            const separatorRegex = this.getSeparatorRegex();
+            const lastSeparator = lastMatch(containerString,separatorRegex);
+            const closingRegex = getClosingRegex();
+            const closing = containerString.match(closingRegex)[0];
+            const closingSubstringRegex = new RegExp(`${this.tagSeparsatorPattern}?${this.closingPattern}`,'g');
+            const closingSubstring = containerString.match(closingSubstringRegex)[0];
+            return containerString.replace(closingSubstring,`${lastSeparator?lastSeparator:this.tagSeparator}${prefix}${tag}${this.tagSeparator}${closing}`)
+        }
+        this.addOpeningTagToContainer = function(containerString,tag){
+            return this.addTagToContainer(containerString,tag,this.tagOpeningPrefix);
+        }
+        this.addClosingTagToContainer = function(containerString,tag){
+            return this.addTagToContainer(containerString,tag,this.tagClosingPrefix);
+        }
+    }
+
+    function createTagsContainer(){
+        let container = {
+            oppeningPattern: '\\<\\!\\-{2}',
+            defaultOppening: '<--',
+            closingPattertn: '\\-{2}\\>',
+            defaultClosing: '-->',
+            tagSeparatorPattern: '\\s',
+            deffaultTagSeparator: ' ',
+            tagOpeningPrefix: '',
+            tagClosingPrefix: '/'
         };
+        container.instance = new TagContainer()
+            .setOpening(container.oppeningPattern,container.defaultOppening)
+            .setClosing(container.closingPattertn,container.defaultClosing)
+            .setTagSeparator(container.tagSeparatorPattern,container.deffaultTagSeparator)
+            .setTagOpeningPrefix(container.tagOpeningPrefix)
+            .setTagClosingPrefix(container.tagClosingPrefix);
+        container.regex = container.instance.getContainerSearchingRegex();
+        return container;
+    }
+
+    function createIgnoringTag(){
+        let tag = {
+            name: 'ignoreAttchmentUpdating';
+        };
+        tag.openingRegex = tagsContainer.instance.getOpeningTagSearchingRegex(tag.name);
+        tag.closingRegex = tagsContainer.instance.getClosingTagSearchingRegex(tag.name);
+        return tag;
+    }
+
+
+    function init() {
+        tagsContainer = createTagsContainer();
+        ignoringTag = createIgnoringTag(); //TODO: TESTEAR ESTA MIERDA QUE SOLO ESCRIBÍ CÓDIGO A LO PENDEJO Y NO SÉ SI DE VERDAD FUNCIONA QUE MIERDA LAS PRUEBAS UNITARIAS PORQUE NO MEJOR USTED ME PRUEBA LA UNITARIA QUE TENGO ACÁ.
         refreshFoldersActionId = "refreshMediaAttachmentFolder";
         mediaPaths = [""].concat(mediaFolderPaths.split(pathSeparator));
         attachmentPaths =  [""].concat(attachmentFolderPaths.split(pathSeparator));
@@ -184,7 +227,7 @@ Script {
 
     function updateMediaFolder(pNoteContent,pNewPath){
         const mediaLineRegex = /(?:\!\[[^\r\n\]]+\]\([^\r\n\)]+\))|(?:\<img[^\>]*(?:\s|\"|\n)src\s*\=\s*\"[^\"]*\"[^\>]*\/\>)/g;
-        const mediaLineFilter = (content, match)=>{return !isInsideIgnoreSection(content,match.index)};
+        const mediaLineFilter = (content, match)=>{return !isInsideTag(content,match.index)};
         const mediaLines = extractMatches(pNoteContent,mediaLineRegex,mediaLineFilter);
         let newNoteContent = pNoteContent;
 
@@ -209,7 +252,7 @@ Script {
     function updateFileFolder(pNoteContent,pNewPath){
         const fileLineRegex = /(?:\!?\[[^\r\n\]]+\]\([^\r\n\)]+\))|(?:\<a[^\>]*(?:\s|\"|\n)href\s*\=\s*\"[^\"]*\"[^\>]*\>)/g;
         const mediaFromMDCheckRegex = /^\!/;
-        const fileLineFilter = (content, match)=>{return !(isInsideIgnoreSection(content,match.index) || mediaFromMDCheckRegex.test(match))};
+        const fileLineFilter = (content, match)=>{return !(isInsideTag(content,match.index) || mediaFromMDCheckRegex.test(match))};
         const fileLines = extractMatches(pNoteContent,fileLineRegex,fileLineFilter);
         let newNoteContent = pNoteContent;
 
@@ -288,9 +331,9 @@ Script {
             return null;
     }
 
-    function isInsideIgnoreSection(pContent, pPosition) {
-        let lastStart = lastMatch(pContent, ignoringTag.open, 0, pPosition);
-        let lastEnd = lastMatch(pContent, ignoringTag.close, 0, pPosition);
+    function isInsideTag(pContent, pPosition,tag) {
+        let lastStart = lastMatch(pContent, tag.openingRegex, 0, pPosition);
+        let lastEnd = lastMatch(pContent, tag.closingRegex, 0, pPosition);
         let lastStartIndex = lastStart?lastStart.index:-1;
         let lastEndIndex = lastEnd?lastEnd.index:-1;
 
@@ -330,6 +373,6 @@ Script {
     }
 
     function escapeRegExp(str) {
-        return str.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 }
