@@ -14,6 +14,8 @@ Script {
     property string refreshFoldersActionId;
     property variant mediaPaths;
     property variant attachmentPaths;
+    property variant tagsContainerClass;
+    property variant usedTagsContainer;
     property variant ignoringTag;
 
     property variant settingsVariables: [
@@ -60,7 +62,79 @@ Script {
     ];
 
     function init() {
-        ignoringTag = {beginning:"<!-- ignoreSection -->",ending:"<!-- \\ignoreSection -->"};
+        tagsContainerClass = class {
+            constructor(){
+                this.openingPattern = null;
+                this.closingPattern = null;
+                this.tagOpeningPrefixPattern = null;
+                this.tagClosingPrefixPattern = null;
+                this.tagSeparatorPattern = null;
+                this.tagPattern = '[\\w]';
+            }
+            setOpeningPattern(pattern){
+                this.openingPattern = pattern;
+                return this;
+            }
+            setClosingPattern(pattern){
+                this.closingPattern = pattern;
+                return this;
+            }
+            setTagOpeningPrefixPattern(pattern){
+                this.tagOpeningPrefixPattern = pattern;
+                return this;
+            }
+            setTagClosingPrefixPattern(pattern){
+                this.tagClosingPrefixPattern = pattern;
+                return this;
+            }
+            setTagSeparatorPattern(pattern){
+                this.tagSeparatorPattern = pattern;
+                return this;
+            }
+            getTagSearchingRegex(tag,prefix){
+                const pattern = `${this.openingPattern}(?:${this.tagSeparatorPattern}+(?:${this.tagOpeningPrefixPattern}|${this.tagClosingPrefixPattern})${this.tagPattern})*${this.tagSeparatorPattern}+${prefix}${tag}(?:${this.tagSeparatorPattern}+(?:${this.tagOpeningPrefixPattern}|${this.tagClosingPrefixPattern})${this.tagPattern})*${this.tagSeparatorPattern}+${this.closingPattern}`;
+                return new RegExp(pattern, "g");
+            }
+            getOpenningTagSearchingRegex(tag){
+                return getTagSearchingRegex(tag,this.tagOpeningPrefixPattern);
+            }
+            getOpenningTagSearchingRegex(tag){
+                return getTagSearchingRegex(tag,this.tagClosingPrefixPattern);
+            }
+            getContainerSearchingRegex(){
+                const pattern = `${this.openingPattern}(?:${this.tagSeparatorPattern}+(?:${this.tagOpeningPrefixPattern}|${this.tagClosingPrefixPattern})${this.tagPattern})*${this.tagSeparatorPattern}+${this.closingPattern}`;
+                return new RegExp(pattern, "g");
+            }
+            addTagToContainer(containerString,tag,prefix,tagSeparator=null){
+                const separatorRegex = new RegExp(this.tagSeparatorPattern,'g');
+                const lastSeparator = lastMatch(containerString,separatorRegex);
+                const closingRegex = new RegExp(this.closingPattern,'g');
+                const closing = containerString.match(closingRegex)[0];
+                const closingSubstringRegex = new RegExp(`${this.tagSeparatorPattern}?${this.closingPattern}`,'g');
+                const closingSubstring = containerString.match(closingSubstringRegex)[0];
+                return containerString.replace(closingSubstring,`${lastSeparator?lastSeparator:tagSeparator}${prefix}${tag}${tagSeparator?tagSeparator:lastSeparator}${closing}`)
+            }
+        };
+        usedTagsContainer = {
+            instance: new tagsContainerClass(); //TODO
+        }
+        ignoringTag = {
+            container: {
+                tagOpeningPrefix: '',
+                tagClosingPrefix: '/',
+                oppeningPattern: '\\<\\!(\\-{2})',
+                tagPattern: `(?:\\s+)(${tagOpeningPrefix==''?tagOpeningPrefix:`\\:${tagOpeningPrefix}`}|${tagClosingPrefix==''?tagClosingPrefix:`\\${tagClosingPrefix}`})`,
+                regex: (tag, prefix)=>{
+
+                }
+            },
+            containerRegex: /\<\!(\-{2})(?:\s+\/?[\w]+)*\s+\1\>/,
+            open:/\<\!(\-{2})(?:\s+\/?[\w]+)*\s+ignoreAttchmentUpdating\s+(?:\/?[\w]+\s+)*\1\>/,
+            close:/\<\!(\-{2})(?:\s+\/?[\w]+)*\s+\/ignoreAttchmentUpdating\s+(?:\/?[\w]+\s+)*\1\>/,
+            addOppeningTag: (originalContainer, tag) => {
+
+            }
+        };
         refreshFoldersActionId = "refreshMediaAttachmentFolder";
         mediaPaths = [""].concat(mediaFolderPaths.split(pathSeparator));
         attachmentPaths =  [""].concat(attachmentFolderPaths.split(pathSeparator));
@@ -69,39 +143,43 @@ Script {
 
     function customActionInvoked(action) {
         if (action === refreshFoldersActionId) {
-            //Current Note
-            let curNote = script.currentNote();
-            let curNoteContent = curNote.noteText
-
-            //Select media folder path
-            let mediaFolder = script.inputDialogGetItem("Seleccione carpeta multimedia","Seleccione la carpeta multimedia por la que se desean actualizar las rutas.",mediaPaths);
-            if(mediaFolder === "") return false;
-            if (!checkPathEnding(mediaFolder,mediaFolderName)){
-                script.informationMessageBox("La ultima carpeta de la ruta " + mediaFolder + " debe ser: " + mediaFolderName, "Error");
-                return false;
-            }
-
-            //Select media folder path
-            let attachmentFolder = script.inputDialogGetItem("Seleccione carpeta de adjuntos","Seleccione la carpeta de adjuntos por la que se desean actualizar las rutas.",attachmentPaths);
-            if(attachmentFolder === "") return false;
-            if (!checkPathEnding(attachmentFolder,attachmentFolderName)){
-                script.informationMessageBox("La ultima carpeta de la ruta " + attachmentFolder + " debe ser: " + attachmentFolderName, "Error");
-                return false;
-            }
-
-            //Update media
-            curNoteContent = updateMediaFolder(curNoteContent,mediaFolder);
-            if(curNoteContent === null) return false;
-
-            //Update file
-            curNoteContent = updateFileFolder(curNoteContent,attachmentFolder);
-            if(curNoteContent === null) return false;
-
-            //Update note content
-            script.noteTextEditSelectAll();
-            script.noteTextEditWrite(curNoteContent);
-            return true;
+            updateCurrentNoteAttachments();
         }
+    }
+
+    function updateCurrentNoteAttachments(){
+        //Current Note
+        let curNote = script.currentNote();
+        let curNoteContent = curNote.noteText
+
+        //Select media folder path
+        let mediaFolder = script.inputDialogGetItem("Seleccione carpeta multimedia","Seleccione la carpeta multimedia por la que se desean actualizar las rutas.",mediaPaths);
+        if(mediaFolder === "") return false;
+        if (!checkPathEnding(mediaFolder,mediaFolderName)){
+            script.informationMessageBox("La ultima carpeta de la ruta " + mediaFolder + " debe ser: " + mediaFolderName, "Error");
+            return false;
+        }
+
+        //Select media folder path
+        let attachmentFolder = script.inputDialogGetItem("Seleccione carpeta de adjuntos","Seleccione la carpeta de adjuntos por la que se desean actualizar las rutas.",attachmentPaths);
+        if(attachmentFolder === "") return false;
+        if (!checkPathEnding(attachmentFolder,attachmentFolderName)){
+            script.informationMessageBox("La ultima carpeta de la ruta " + attachmentFolder + " debe ser: " + attachmentFolderName, "Error");
+            return false;
+        }
+
+        //Update media
+        curNoteContent = updateMediaFolder(curNoteContent,mediaFolder);
+        if(curNoteContent === null) return false;
+
+        //Update file
+        curNoteContent = updateFileFolder(curNoteContent,attachmentFolder);
+        if(curNoteContent === null) return false;
+
+        //Update note content
+        script.noteTextEditSelectAll();
+        script.noteTextEditWrite(curNoteContent);
+        return true;
     }
 
     function updateMediaFolder(pNoteContent,pNewPath){
@@ -159,7 +237,7 @@ Script {
 
         while ((match = pRegex.exec(pContent)) !== null) {
             if (pMatchFilter(pContent, match)) {
-                matches.push({ line: match[0], index: match.index });
+                matches.push({line: match[0], index: match.index });
             }
         }
 
@@ -211,18 +289,34 @@ Script {
     }
 
     function isInsideIgnoreSection(pContent, pPosition) {
-        const startTag = "<!-- ignoreSection -->";
-        const endTag = "<!-- \\ignoreSection -->";
+        let lastStart = lastMatch(pContent, ignoringTag.open, 0, pPosition);
+        let lastEnd = lastMatch(pContent, ignoringTag.close, 0, pPosition);
+        let lastStartIndex = lastStart?lastStart.index:-1;
+        let lastEndIndex = lastEnd?lastEnd.index:-1;
 
-        let lastStart = pContent.lastIndexOf(startTag, pPosition);
-        let lastEnd = pContent.lastIndexOf(endTag, pPosition);
-
-        return lastStart !== -1 && (lastEnd === -1 || lastStart > lastEnd);
+        return lastStartIndex !== -1 && (lastEndIndex === -1 || lastStartIndex > lastEndIndex);
     }
 
-    function lastIndexOfRegex(pContent, pRegex, pBeginnigIndex = 0, pEndingNumber = pContent.length){
-        const selectedContent = pContent.slice(pBeginnigIndex, pEndingNumber);
-        //TODO: https://stackoverflow.com/questions/5835469/changing-the-regexp-flags
+    function lastMatch(pContent, pRegex, pBeginnigIndex = 0, pEndingIndex = pContent.length){
+        //seleccionar contenido
+        const selectedContent = pContent.slice(pBeginnigIndex, pEndingIndex);
+
+        //Verificar RegExp
+        if (!pRegex.global) {
+            let flags = "g";
+            if (pRegex.ignoreCase) flags += "i";
+            if (pRegex.multiline) flags += "m";
+            pRegex = RegExp(pRegex.source, flags);
+        }
+
+        //Buscar último match
+        let match;
+        let lastMatch;
+        while((match = pRegex.exec(selectedContent)) !== null){
+            lastMatch ={line: match[0], index: match.index};
+        }
+
+        return lastMatch;
     }
 
     function checkPathEnding(pPath, pExpectedValue){
