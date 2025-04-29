@@ -60,7 +60,7 @@ Script {
         }
     ];
 
-    function TagContainer(){
+    function tagContainer(){
         this.openingPattern = null;
         this.opening = null;
 
@@ -116,10 +116,10 @@ Script {
             return new RegExp(pattern, "g");
         }
         this.getOpeningTagSearchingRegex = function(tag){
-            return getTagSearchingRegex(tag,this.tagOpeningPrefixPattern);
+            return this.getTagSearchingRegex(tag,this.tagOpeningPrefixPattern);
         }
         this.getClosingTagSearchingRegex = function(tag){
-            return getTagSearchingRegex(tag,this.tagClosingPrefixPattern);
+            return this.getTagSearchingRegex(tag,this.tagClosingPrefixPattern);
         }
 
         this.getContainerSearchingRegex = function(){
@@ -130,11 +130,11 @@ Script {
         this.addTagToContainer = function(containerString,tag,prefix){
             const separatorRegex = this.getSeparatorRegex();
             const lastSeparator = lastMatch(containerString,separatorRegex);
-            const closingRegex = getClosingRegex();
+            const closingRegex = this.getClosingRegex();
             const closing = containerString.match(closingRegex)[0];
-            const closingSubstringRegex = new RegExp(`${this.tagSeparsatorPattern}?${this.closingPattern}`,'g');
+            const closingSubstringRegex = new RegExp(`${this.tagSeparatorPattern}?${this.closingPattern}`,'g');
             const closingSubstring = containerString.match(closingSubstringRegex)[0];
-            return containerString.replace(closingSubstring,`${lastSeparator?lastSeparator:this.tagSeparator}${prefix}${tag}${this.tagSeparator}${closing}`)
+            return containerString.replace(closingSubstring,`${lastSeparator?lastSeparator.line:this.tagSeparator}${prefix}${tag}${this.tagSeparator}${closing}`)
         }
         this.addOpeningTagToContainer = function(containerString,tag){
             return this.addTagToContainer(containerString,tag,this.tagOpeningPrefix);
@@ -146,42 +146,54 @@ Script {
 
     function createTagsContainer(){
         let container = {
-            oppeningPattern: '\\<\\!\\-{2}',
-            defaultOppening: '<--',
-            closingPattertn: '\\-{2}\\>',
+            openingPattern: '\\<\\!\\-{2}',
+            defaultOpening: '<--',
+            closingPattern: '\\-{2}\\>',
             defaultClosing: '-->',
             tagSeparatorPattern: '\\s',
-            deffaultTagSeparator: ' ',
+            defaultTagSeparator: ' ',
             tagOpeningPrefix: '',
             tagClosingPrefix: '/'
         };
-        container.instance = new TagContainer()
-            .setOpening(container.oppeningPattern,container.defaultOppening)
-            .setClosing(container.closingPattertn,container.defaultClosing)
-            .setTagSeparator(container.tagSeparatorPattern,container.deffaultTagSeparator)
+        container.instance = new tagContainer()
+            .setOpening(container.openingPattern,container.defaultOpening)
+            .setClosing(container.closingPattern,container.defaultClosing)
+            .setTagSeparator(container.tagSeparatorPattern,container.defaultTagSeparator)
             .setTagOpeningPrefix(container.tagOpeningPrefix)
             .setTagClosingPrefix(container.tagClosingPrefix);
         container.regex = container.instance.getContainerSearchingRegex();
+        script.log(`Separator regex: ${container.instance.getSeparatorRegex().source}`);//DEBUG
+        script.log(`Closing regex: ${container.instance.getClosingRegex().source}`);//DEBUG
+        script.log(`Container regex: ${container.regex.source}`);//DEBUG
         return container;
     }
 
     function createIgnoringTag(){
         let tag = {
-            name: 'ignoreAttchmentUpdating';
+            name: 'ignoreAttchmentUpdating'
         };
         tag.openingRegex = tagsContainer.instance.getOpeningTagSearchingRegex(tag.name);
         tag.closingRegex = tagsContainer.instance.getClosingTagSearchingRegex(tag.name);
+        script.log(`Opening tag regex: ${tag.openingRegex.source}`);//DEBUG
+        script.log(`Closing tag regex: ${tag.closingRegex.source}`);//DEBUG
         return tag;
     }
 
 
     function init() {
         tagsContainer = createTagsContainer();
-        ignoringTag = createIgnoringTag(); //TODO: TESTEAR ESTA MIERDA QUE SOLO ESCRIBÍ CÓDIGO A LO PENDEJO Y NO SÉ SI DE VERDAD FUNCIONA QUE MIERDA LAS PRUEBAS UNITARIAS PORQUE NO MEJOR USTED ME PRUEBA LA UNITARIA QUE TENGO ACÁ.
+        ignoringTag = createIgnoringTag();
         refreshFoldersActionId = "refreshMediaAttachmentFolder";
         mediaPaths = [""].concat(mediaFolderPaths.split(pathSeparator));
         attachmentPaths =  [""].concat(attachmentFolderPaths.split(pathSeparator));
         script.registerCustomAction(refreshFoldersActionId, "Refresh folders: attachments", "Refresh folders: attachments", "", true);
+        let testContainer = '<!-- pepe ahora /cerrando kk -->';//DEBUG
+        let testTag = 'testTag';//DEBUG
+        script.log(`Test Container: ${testContainer}`);//DEBUG
+        script.log(`Test Tag: ${testTag}`);//DEBUG
+        script.log(`Opening test container: ${tagsContainer.instance.addOpeningTagToContainer(testContainer,testTag)}`);//DEBUG
+        script.log(`Closing test container: ${tagsContainer.instance.addOpeningTagToContainer(testContainer,testTag)}`);//DEBUG
+        //TODO: Crear script de ignore section.
     }
 
     function customActionInvoked(action) {
@@ -354,12 +366,12 @@ Script {
 
         //Buscar último match
         let match;
-        let lastMatch;
+        let lastMatchToReturn;
         while((match = pRegex.exec(selectedContent)) !== null){
-            lastMatch ={line: match[0], index: match.index};
+            lastMatchToReturn ={line: match[0], index: match.index};
         }
 
-        return lastMatch;
+        return lastMatchToReturn;
     }
 
     function checkPathEnding(pPath, pExpectedValue){
