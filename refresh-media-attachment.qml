@@ -17,6 +17,8 @@ Script {
     property variant tagsContainer;
     property variant ignoringTag;
 
+    property bool isTesting: true;//<-CHANGE THIS DEPENDING ON WHETHER YOU'RE TESTING OR NOT
+
     property variant settingsVariables: [
         {
             "identifier": "separator",
@@ -76,7 +78,7 @@ Script {
         this.tagClosingPrefixPattern = null;
         this.tagClosingPrefix = null;
 
-        this.tagPattern = '[\\w]';
+        this.tagPattern = '[\\w]+';
 
         this.setOpening = function(pattern,defaultValue){
             this.openingPattern = pattern;
@@ -162,9 +164,6 @@ Script {
             .setTagOpeningPrefix(container.tagOpeningPrefix)
             .setTagClosingPrefix(container.tagClosingPrefix);
         container.regex = container.instance.getContainerSearchingRegex();
-        script.log(`Separator regex: ${container.instance.getSeparatorRegex().source}`);//DEBUG
-        script.log(`Closing regex: ${container.instance.getClosingRegex().source}`);//DEBUG
-        script.log(`Container regex: ${container.regex.source}`);//DEBUG
         return container;
     }
 
@@ -174,8 +173,6 @@ Script {
         };
         tag.openingRegex = tagsContainer.instance.getOpeningTagSearchingRegex(tag.name);
         tag.closingRegex = tagsContainer.instance.getClosingTagSearchingRegex(tag.name);
-        script.log(`Opening tag regex: ${tag.openingRegex.source}`);//DEBUG
-        script.log(`Closing tag regex: ${tag.closingRegex.source}`);//DEBUG
         return tag;
     }
 
@@ -187,13 +184,11 @@ Script {
         mediaPaths = [""].concat(mediaFolderPaths.split(pathSeparator));
         attachmentPaths =  [""].concat(attachmentFolderPaths.split(pathSeparator));
         script.registerCustomAction(refreshFoldersActionId, "Refresh folders: attachments", "Refresh folders: attachments", "", true);
-        let testContainer = '<!-- pepe ahora /cerrando kk -->';//DEBUG
-        let testTag = 'testTag';//DEBUG
-        script.log(`Test Container: ${testContainer}`);//DEBUG
-        script.log(`Test Tag: ${testTag}`);//DEBUG
-        script.log(`Opening test container: ${tagsContainer.instance.addOpeningTagToContainer(testContainer,testTag)}`);//DEBUG
-        script.log(`Closing test container: ${tagsContainer.instance.addOpeningTagToContainer(testContainer,testTag)}`);//DEBUG
         //TODO: Crear script de ignore section.
+
+        //TESTS
+        if(isTesting)
+            runTests();
     }
 
     function customActionInvoked(action) {
@@ -368,7 +363,7 @@ Script {
         let match;
         let lastMatchToReturn;
         while((match = pRegex.exec(selectedContent)) !== null){
-            lastMatchToReturn ={line: match[0], index: match.index};
+            lastMatchToReturn ={line: match[0], index:pBeginnigIndex + match.index};
         }
 
         return lastMatchToReturn;
@@ -386,5 +381,157 @@ Script {
 
     function escapeRegExp(str) {
         return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    //TESTS
+    function runTests(){
+        script.log("Comenzando tests...");
+        script.log("====ESCAPE REGEX====");
+        testEscapeRegExp();
+        script.log("====LAST MATCH====");
+        testLastMatch();
+        script.log("====IS INSIDE TAG====");
+        testIsInsideTag();
+        script.log("Terminado.");
+    }
+
+    function assertEqual(actual, expected, testName) {
+        if (actual === expected) {
+            script.log(`✔️ ${testName}`);
+        } else {
+            script.log(`❌ ${testName} - esperado: "${expected}", obtenido: "${actual}"`);
+        }
+    }
+
+    function testEscapeRegExp() {
+        const input = "c:/users/admin/documents/media";
+        const expected = "c:/users/admin/documents/media";
+        const actual = escapeRegExp(input);
+        assertEqual(actual, expected, "escapeRegExp sin caracteres especiales");
+
+        const input2 = "c:\\users\\admin\\media";
+        const expected2 = "c:\\\\users\\\\admin\\\\media";
+        const actual2 = escapeRegExp(input2);
+        assertEqual(actual2, expected2, "escapeRegExp con backslashes");
+    }
+
+    function testLastMatch() {
+        const content_1 = "line 1\nline 2\nline 3\nline 2 again";
+        const regex_1 = /line 2/g;
+        const match_1 = lastMatch(content_1, regex_1);
+        assertEqual(match_1.line, "line 2", "lastMatch retorna la última coincidencia");
+        assertEqual(match_1.index, 21, "lastMatch retorna el índice correcto");
+
+        const content_2 = "line 1\nline 2\nline 3\nline 2 again";
+        const regex_2 = /line 2/g;
+        const firstPosition_2 = content_2.indexOf('line 2');
+        const lastPosition_2 = content_2.indexOf('line 2',firstPosition_2+1);
+        const match_2 = lastMatch(content_2, regex_2, firstPosition_2);
+        assertEqual(match_2.line, "line 2", "lastMatch retorna la última coincidencia empezando en primera aparición");
+        assertEqual(match_2.index, lastPosition_2, "lastMatch retorna el índice correcto");
+
+        const content_3 = "line 1\nline 2\nline 3\nline 2 again";
+        const regex_3 = /line 2/g;
+        const firstPosition_3 = content_3.indexOf('line 2');
+        const lastPosition_3 = content_3.indexOf('line 2',firstPosition_3+1);
+        const match_3 = lastMatch(content_3, regex_3, firstPosition_3);
+        assertEqual(match_3.line, "line 2", "lastMatch retorna la última coincidencia empezando primera aparición + 1");
+        assertEqual(match_3.index, lastPosition_3, "lastMatch retorna el índice correcto");
+
+        const content_4 = "line 1\nline 2\nline 3\nline 2 again";
+        const regex_4 = /line 2/g;
+        const line_4 = 'line 2';
+        const firstPosition_4 = content_4.indexOf('line 2');
+        const lastPosition_4 = content_4.indexOf('line 2',firstPosition_4+1);
+        const match_4 = lastMatch(content_4, regex_4, 0, firstPosition_4+line_4.length);
+        assertEqual(match_4.line, line_4, "lastMatch retorna la primera coincidencia terminando primera aparición + longitud");
+        assertEqual(match_4.index, firstPosition_4, "lastMatch retorna el índice correcto");
+
+        const content_5 = "line 1\nline 2\nline 3\nline 2 again";
+        const regex_5 = /line 2/g;
+        const line_5 = 'line 2';
+        const firstPosition_5 = content_5.indexOf('line 2');
+        const lastPosition_5 = content_5.indexOf('line 2',firstPosition_5+1);
+        const match_5 = lastMatch(content_5, regex_5, 0, lastPosition_5);
+        assertEqual(match_5.line, line_5, "lastMatch retorna la primera coincidencia terminando segunda aparición");
+        assertEqual(match_5.index, firstPosition_5, "lastMatch retorna el índice correcto");
+
+        const content_6 = "line 1\nline 2\nline 3\nline 2 again";
+        const regex_6 = /line 2/g;
+        const line_6 = 'line 2';
+        const firstPosition_6 = content_6.indexOf('line 2');
+        const lastPosition_6 = content_6.indexOf('line 2',firstPosition_6+1);
+        const match_6 = lastMatch(content_6, regex_6, firstPosition_6, lastPosition_6);
+        assertEqual(match_6.line, line_6, "lastMatch retorna la primera coincidencia terminando segunda aparición empezando primera aparicion");
+        assertEqual(match_6.index, firstPosition_6, "lastMatch retorna el índice correcto");
+
+        const content_7 = "line 1\nline 2\nline 3\nline 2 again";
+        const regex_7 = /line 2/g;
+        const line_7 = 'line 2';
+        const firstPosition_7 = content_7.indexOf('line 2');
+        const lastPosition_7 = content_7.indexOf('line 2',firstPosition_7+1);
+        const match_7 = lastMatch(content_7, regex_7, firstPosition_7, lastPosition_7+line_7.length);
+        assertEqual(match_7.line, line_7, "lastMatch retorna la ultima coincidencia terminando segunda aparición + longitud empezando primera aparicion");
+        assertEqual(match_7.index, lastPosition_7, "lastMatch retorna el índice correcto");
+    }
+
+    function testIsInsideTag() {
+        //BASIC IGNORING TAG
+        const IgTag1 = {
+            name: 'ignore'
+        };
+        IgTag1.openingRegex = /<\!-- ignore -->/g;
+        IgTag1.closingRegex = /<\!-- \/ignore -->/g;
+
+        const testName_1_it1 = "isInsideTag detecta por fuera de etiqueta básica 1."
+        const content_1_it1 = "testContent\n<!-- /ignore -->\ntestContent\n<!-- ignore -->\ntestContent\n<!-- /ignore -->\ntestContent\n<!-- ignore -->\ntestContent\n";
+        const position_1_it1 = content_1_it1.indexOf("testContent");
+        assertEqual(isInsideTag(content_1_it1, position_1_it1, IgTag1), false, testName_1_it1);
+
+        const testName_2_it1 = "isInsideTag detecta por fuera de etiqueta básica 2."
+        const content_2_it1 = "testContent\n<!-- /ignore -->\ntestContent\n<!-- ignore -->\ntestContent\n<!-- /ignore -->\ntestContent\n<!-- ignore -->\ntestContent\n";
+        const position_2_it1 = content_2_it1.indexOf("testContent",position_1_it1 + 1);
+        assertEqual(isInsideTag(content_2_it1, position_2_it1, IgTag1), false, testName_2_it1);
+
+        const testName_3_it1 = "isInsideTag detecta por dentro de etiqueta básica 1."
+        const content_3_it1 = "testContent\n<!-- /ignore -->\ntestContent\n<!-- ignore -->\ntestContent\n<!-- /ignore -->\ntestContent\n<!-- ignore -->\ntestContent\n";
+        const position_3_it1 = content_3_it1.indexOf("testContent",position_2_it1 + 1);
+        assertEqual(isInsideTag(content_3_it1, position_3_it1, IgTag1), true, testName_3_it1);
+
+        const testName_4_it1 = "isInsideTag detecta por fuera de etiqueta básica 3."
+        const content_4_it1 ="testContent\n<!-- /ignore -->\ntestContent\n<!-- ignore -->\ntestContent\n<!-- /ignore -->\ntestContent\n<!-- ignore -->\ntestContent\n";
+        const position_4_it1 = content_4_it1.indexOf("testContent",position_3_it1 + 1);
+        assertEqual(isInsideTag(content_4_it1, position_4_it1, IgTag1), false, testName_4_it1);
+
+        const testName_5_it1 = "isInsideTag detecta por dentro de etiqueta básica 2."
+        const content_5_it1 ="testContent\n<!-- /ignore -->\ntestContent\n<!-- ignore -->\ntestContent\n<!-- /ignore -->\ntestContent\n<!-- ignore -->\ntestContent\n";
+        const position_5_it1 = content_5_it1.indexOf("testContent",position_4_it1 + 1);
+        assertEqual(isInsideTag(content_5_it1, position_5_it1, IgTag1), true, testName_5_it1);
+
+        //IGNORING TAG USED IN SCRIPT
+        const testName_1_it2 = "isInsideTag detecta por fuera de etiqueta compleja 1."
+        const content_1_it2 = `<!-- tag5 /tag6 -->testContent\n<!-- tag1 /${ignoringTag.name} /tag2 tag3 tag4 -->\ntestContent\n<!-- /tag1 ${ignoringTag.name} tag2 -->\ntestContent\n<!-- /tag3 /${ignoringTag.name} /tag2 -->\ntestContent\n<!-- /tag6 -->\n<!-- ${ignoringTag.name} /tag4 -->\ntestContent\n<!-- /tag5 -->`;
+        const position_1_it2 = content_1_it2.indexOf("testContent");
+        assertEqual(isInsideTag(content_1_it2, position_1_it2, ignoringTag), false, testName_1_it2);
+
+        const testName_2_it2 = "isInsideTag detecta por fuera de etiqueta compleja 2."
+        const content_2_it2 = `<!-- tag5 /tag6 -->testContent\n<!-- tag1 /${ignoringTag.name} /tag2 tag3 tag4 -->\ntestContent\n<!-- /tag1 ${ignoringTag.name} tag2 -->\ntestContent\n<!-- /tag3 /${ignoringTag.name} /tag2 -->\ntestContent\n<!-- /tag6 -->\n<!-- ${ignoringTag.name} /tag4 -->\ntestContent\n<!-- /tag5 -->`;
+        const position_2_it2 = content_2_it2.indexOf("testContent",position_1_it2 + 1);
+        assertEqual(isInsideTag(content_2_it2, position_2_it2, ignoringTag), false, testName_2_it2);
+
+        const testName_3_it2 = "isInsideTag detecta por dentro de etiqueta compleja 1."
+        const content_3_it2 = `<!-- tag5 /tag6 -->testContent\n<!-- tag1 /${ignoringTag.name} /tag2 tag3 tag4 -->\ntestContent\n<!-- /tag1 ${ignoringTag.name} tag2 -->\ntestContent\n<!-- /tag3 /${ignoringTag.name} /tag2 -->\ntestContent\n<!-- /tag6 -->\n<!-- ${ignoringTag.name} /tag4 -->\ntestContent\n<!-- /tag5 -->`;
+        const position_3_it2 = content_3_it2.indexOf("testContent",position_2_it2 + 1);
+        assertEqual(isInsideTag(content_3_it2, position_3_it2, ignoringTag), true, testName_3_it2);
+
+        const testName_4_it2 = "isInsideTag detecta por fuera de etiqueta compleja 3."
+        const content_4_it2 = `<!-- tag5 /tag6 -->testContent\n<!-- tag1 /${ignoringTag.name} /tag2 tag3 tag4 -->\ntestContent\n<!-- /tag1 ${ignoringTag.name} tag2 -->\ntestContent\n<!-- /tag3 /${ignoringTag.name} /tag2 -->\ntestContent\n<!-- /tag6 -->\n<!-- ${ignoringTag.name} /tag4 -->\ntestContent\n<!-- /tag5 -->`;
+        const position_4_it2 = content_4_it2.indexOf("testContent",position_3_it2 + 1);
+        assertEqual(isInsideTag(content_4_it2, position_4_it2, ignoringTag), false, testName_4_it2);
+
+        const testName_5_it2 = "isInsideTag detecta por dentro de etiqueta compleja 2."
+        const content_5_it2 = `<!-- tag5 /tag6 -->testContent\n<!-- tag1 /${ignoringTag.name} /tag2 tag3 tag4 -->\ntestContent\n<!-- /tag1 ${ignoringTag.name} tag2 -->\ntestContent\n<!-- /tag3 /${ignoringTag.name} /tag2 -->\ntestContent\n<!-- /tag6 -->\n<!-- ${ignoringTag.name} /tag4 -->\ntestContent\n<!-- /tag5 -->`;
+        const position_5_it2 = content_5_it2.indexOf("testContent",position_4_it2 + 1);
+        assertEqual(isInsideTag(content_5_it2, position_5_it2, ignoringTag), true, testName_5_it2);
     }
 }
