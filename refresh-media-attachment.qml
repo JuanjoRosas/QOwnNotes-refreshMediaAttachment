@@ -11,12 +11,14 @@ Script {
     property string mediaFolderPaths;
     property string attachmentFolderPaths;
 
-    property string refreshFoldersActionId;
     property variant mediaPaths;
     property variant attachmentPaths;
     property variant tagsContainer;
     property variant ignoringTag;
 
+    property string refreshAttachmentsActionId: "refeshAttachmentsFolders";
+    property string ignoreThisSectionActionId: "refreshAttachment_ignoreSection";
+    property string noticeThisSectionActionId: "refreshAttachment_noticeSection";
     property bool isTesting: true;//<-CHANGE THIS DEPENDING ON WHETHER YOU'RE TESTING OR NOT
 
     property variant settingsVariables: [
@@ -178,13 +180,16 @@ Script {
 
 
     function init() {
+        //Intialize some properties
         tagsContainer = createTagsContainer();
         ignoringTag = createIgnoringTag();
-        refreshFoldersActionId = "refreshMediaAttachmentFolder";
         mediaPaths = [""].concat(mediaFolderPaths.split(pathSeparator));
         attachmentPaths =  [""].concat(attachmentFolderPaths.split(pathSeparator));
-        script.registerCustomAction(refreshFoldersActionId, "Refresh folders: attachments", "Refresh folders: attachments", "", true);
-        //TODO: Crear script de ignore section.
+
+        //Register custom actions
+        script.registerCustomAction(refreshAttachmentsActionId, "Refresh folders: attachments", "Refresh folders: attachments", "", true);
+        script.registerCustomAction(ignoreThisSectionActionId, "Refresh folders: ignore this section", "Refresh folders: ignore this section", "", true);
+        script.registerCustomAction(noticeThisSectionActionId, "Refresh folders: notice this section", "Refresh folders: notice this section", "", true);
 
         //TESTS
         if(isTesting)
@@ -192,8 +197,16 @@ Script {
     }
 
     function customActionInvoked(action) {
-        if (action === refreshFoldersActionId) {
-            updateCurrentNoteAttachments();
+        switch(action){
+            case refreshAttachmentsActionId:
+                updateCurrentNoteAttachments();
+                break;
+            case ignoreThisSectionActionId:
+                //TODO
+                break;
+            case noticeThisSectionActionId:
+                //TODO
+                break;
         }
     }
 
@@ -234,7 +247,7 @@ Script {
 
     function updateMediaFolder(pNoteContent,pNewPath){
         const mediaLineRegex = /(?:\!\[[^\r\n\]]+\]\([^\r\n\)]+\))|(?:\<img[^\>]*(?:\s|\"|\n)src\s*\=\s*\"[^\"]*\"[^\>]*\/\>)/g;
-        const mediaLineFilter = (content, match)=>{return !isInsideTag(content,match.index)};
+        const mediaLineFilter = (content, match)=>{return !isInsideTag(content,match.index,ignoringTag)};
         const mediaLines = extractMatches(pNoteContent,mediaLineRegex,mediaLineFilter);
         let newNoteContent = pNoteContent;
 
@@ -259,7 +272,7 @@ Script {
     function updateFileFolder(pNoteContent,pNewPath){
         const fileLineRegex = /(?:\!?\[[^\r\n\]]+\]\([^\r\n\)]+\))|(?:\<a[^\>]*(?:\s|\"|\n)href\s*\=\s*\"[^\"]*\"[^\>]*\>)/g;
         const mediaFromMDCheckRegex = /^\!/;
-        const fileLineFilter = (content, match)=>{return !(isInsideTag(content,match.index) || mediaFromMDCheckRegex.test(match))};
+        const fileLineFilter = (content, match)=>{return !(isInsideTag(content,match.index,ignoringTag) || mediaFromMDCheckRegex.test(match))};
         const fileLines = extractMatches(pNoteContent,fileLineRegex,fileLineFilter);
         let newNoteContent = pNoteContent;
 
@@ -338,7 +351,7 @@ Script {
             return null;
     }
 
-    function isInsideTag(pContent, pPosition,tag) {
+    function isInsideTag(pContent, pPosition, tag) {
         let lastStart = lastMatch(pContent, tag.openingRegex, 0, pPosition);
         let lastEnd = lastMatch(pContent, tag.closingRegex, 0, pPosition);
         let lastStartIndex = lastStart?lastStart.index:-1;
