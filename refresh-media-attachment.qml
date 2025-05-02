@@ -351,9 +351,13 @@ Script {
             return null;
     }
 
-    function isInsideTag(pContent, pPosition, tag) {
-        let lastStart = lastMatch(pContent, tag.openingRegex, 0, pPosition);
-        let lastEnd = lastMatch(pContent, tag.closingRegex, 0, pPosition);
+    function closeTags(pContent, pTag){
+
+    }
+
+    function isInsideTag(pContent, pPosition, pTag) {
+        let lastStart = lastMatch(pContent, pTag.openingRegex, 0, pPosition);
+        let lastEnd = lastMatch(pContent, pTag.closingRegex, 0, pPosition);
         let lastStartIndex = lastStart?lastStart.index:-1;
         let lastEndIndex = lastEnd?lastEnd.index:-1;
 
@@ -380,6 +384,32 @@ Script {
         }
 
         return lastMatchToReturn;
+    }
+
+    function countMatches(){
+        //TODO
+    }
+
+    function addFlags(pRegex, pFlags){
+        const hasGlobal = pRegex.global;
+        const hasIgnoreCase = pRegex.ignoreCase;
+        const hasMultiline = pRegex.multiline;
+
+        const globalFlag = 'g';
+        const ignoreCaseFlag = 'i';
+        const multilineFlag = 'm';
+        
+        const addGlobal = pFlags.includes(globalFlag);
+        const addIgnoreCase = pFlags.includes(ignoreCaseFlag);
+        const addMultiline = pFlags.includes(multilineFlag);
+
+        let regexToReturn = pRegex;
+        if ( addGlobal && !hasGlobal || addIgnoreCase && !hasIgnoreCase || addMultiline && !hasMultiline ) {
+            let newFlags = `${addGlobal||hasGlobal?globalFlag:''}${addIgnoreCase||hasIgnoreCase?ignoreCaseFlag:''}${addMultiline||hasMultiline?multilineFlag:''}`;
+            regexToReturn = new RegExp(regexToReturn.source, newFlags);
+        }
+
+        return regexToReturn;
     }
 
     function checkPathEnding(pPath, pExpectedValue){
@@ -426,6 +456,27 @@ Script {
         const expected2 = "c:\\\\users\\\\admin\\\\media";
         const actual2 = escapeRegExp(input2);
         assertEqual(actual2, expected2, "escapeRegExp con backslashes");
+    }
+
+    function testAddFlags(){
+        const flags = ['g','i','m'];
+        const pattern = '\w';
+        let baseRegex = null;
+        let baseFlags = null;
+        let baseFlagsQty = 0;
+        let newFlags = null;
+        let newFlagsQty = 0;
+
+        const arrayCombination = (arr) =>{
+            //TODO
+        }
+
+        for (baseFlagsQty = 0;baseFlagsQty<=flags.length;baseFlagsQty++) {
+            for (newFlagsQty = 0;newFlagsQty<=flags.length;newFlagsQty++) {
+                
+            }
+        }
+
     }
 
     function testLastMatch() {
