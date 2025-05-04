@@ -352,7 +352,7 @@ Script {
     }
 
     function closeTags(pContent, pTag){
-
+        //TODO
     }
 
     function isInsideTag(pContent, pPosition, pTag) {
@@ -369,12 +369,7 @@ Script {
         const selectedContent = pContent.slice(pBeginnigIndex, pEndingIndex);
 
         //Verificar RegExp
-        if (!pRegex.global) {
-            let flags = "g";
-            if (pRegex.ignoreCase) flags += "i";
-            if (pRegex.multiline) flags += "m";
-            pRegex = RegExp(pRegex.source, flags);
-        }
+        pRegex = addFlags(pRegex, 'g');
 
         //Buscar último match
         let match;
@@ -431,6 +426,8 @@ Script {
         script.log("Comenzando tests...");
         script.log("====ESCAPE REGEX====");
         testEscapeRegExp();
+        script.log("====ADD FLAGS====");
+        testAddFlags();
         script.log("====LAST MATCH====");
         testLastMatch();
         script.log("====IS INSIDE TAG====");
@@ -463,20 +460,37 @@ Script {
         const pattern = '\w';
         let baseRegex = null;
         let baseFlags = null;
-        let baseFlagsQty = 0;
         let newFlags = null;
-        let newFlagsQty = 0;
+        let newRegex = null;
 
-        const arrayCombination = (arr) =>{
-            //TODO
-        }
+        const arrayCombination = (array) => {
+            const result = [];
 
-        for (baseFlagsQty = 0;baseFlagsQty<=flags.length;baseFlagsQty++) {
-            for (newFlagsQty = 0;newFlagsQty<=flags.length;newFlagsQty++) {
-                
+            const helper = (start, combo) => {
+                if (combo.length > 0) {
+                    result.push([...combo]);
+                }
+                for (let i = start; i < array.length; i++) {
+                    helper(i + 1, [...combo, array[i]]);
+                }
+            };
+
+            helper(0, []);
+            return result;
+        };
+        const flagsCombination = [[],...arrayCombination(flags)].map((x)=>x.join(''));
+
+        const includesAll = (arr, values) => values.every(v => arr.includes(v));
+
+        for(let i=0; i < flagsCombination.length; i++){
+            baseFlags = flagsCombination[i];
+            baseRegex = RegExp(pattern,baseFlags);
+            for(let j=0; j < flagsCombination.length; j++){
+                newFlags = flagsCombination[j];
+                newRegex = addFlags(baseRegex, newFlags);
+                assertEqual(includesAll(newRegex.flags, newFlags.split('').concat(baseFlags.split(''))), true, `Banderas base = ${baseFlags}. Banderas nuevas = ${newFlags}`);
             }
         }
-
     }
 
     function testLastMatch() {
