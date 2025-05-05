@@ -13,7 +13,7 @@ Script {
 
     property variant mediaPaths;
     property variant attachmentPaths;
-    property variant tagsContainer;
+    property variant tagContainer;
     property variant ignoringTag;
 
     property string refreshAttachmentsActionId: "refeshAttachmentsFolders";
@@ -64,7 +64,24 @@ Script {
         }
     ];
 
-    function tagContainer(){
+    function textBoxClass(){
+        this.lineBreakRegex = /\n/g;
+        this.lineBreak = '\n';
+        this.content = '';
+        this.lines = [];
+
+        this.setContent = function(pContent){
+            this.content = pContent;
+            this.lines = pContent.split(this.lineBreakRegex);
+        }
+
+        this.setLines = function(pLines){
+            this.lines = pLines;
+            this.content = this.lines.join(this.lineBreak);
+        }
+    }
+
+    function tagContainerClass(){
         this.openingPattern = null;
         this.opening = null;
 
@@ -106,6 +123,10 @@ Script {
             this.tagClosingPrefix = value;
             this.tagClosingPrefixPattern = escapeRegExp(this.tagClosingPrefix);
             return this;
+        }
+
+        this.getDefault = function(){
+            return `${this.opening}${this.tagSeparator}${this.closing}`;
         }
 
         this.getSeparatorRegex = function(){
@@ -159,13 +180,16 @@ Script {
             tagOpeningPrefix: '',
             tagClosingPrefix: '/'
         };
-        container.instance = new tagContainer()
+        container.instance = new tagContainerClass()
             .setOpening(container.openingPattern,container.defaultOpening)
             .setClosing(container.closingPattern,container.defaultClosing)
             .setTagSeparator(container.tagSeparatorPattern,container.defaultTagSeparator)
             .setTagOpeningPrefix(container.tagOpeningPrefix)
             .setTagClosingPrefix(container.tagClosingPrefix);
         container.regex = container.instance.getContainerSearchingRegex();
+        container.default = container.instance.getDefault();
+        container.addOpeningTagToContainer = container.instance.addOpeningTagToContainer;
+        container.addClosingTagToContainer = container.instance.addClosingTagToContainer;
         return container;
     }
 
@@ -173,15 +197,15 @@ Script {
         let tag = {
             name: 'ignoreAttchmentUpdating'
         };
-        tag.openingRegex = tagsContainer.instance.getOpeningTagSearchingRegex(tag.name);
-        tag.closingRegex = tagsContainer.instance.getClosingTagSearchingRegex(tag.name);
+        tag.openingRegex = tagContainer.instance.getOpeningTagSearchingRegex(tag.name);
+        tag.closingRegex = tagContainer.instance.getClosingTagSearchingRegex(tag.name);
         return tag;
     }
 
 
     function init() {
         //Intialize some properties
-        tagsContainer = createTagsContainer();
+        tagContainer = createTagsContainer();
         ignoringTag = createIgnoringTag();
         mediaPaths = [""].concat(mediaFolderPaths.split(pathSeparator));
         attachmentPaths =  [""].concat(attachmentFolderPaths.split(pathSeparator));
@@ -351,8 +375,33 @@ Script {
             return null;
     }
 
-    function closeTags(pContent, pTag){
-        //TODO
+    function rearrangeUnclosedTags(pContent, pTag){//TODO: CORREGIR
+        const openingTags = countMatches(pContent,pTag.openingRegex);
+        const closingTags = countMatches(pContent,pTag.closingRegex);
+
+        const rearrangedTextBox = new textBoxClass();
+        rearrangedTextBox.setContent(pContent);
+        const unclosedOpeningTags = openingTags > closingTags ? openingTags - closingTags : 0;
+        const unclosedClosingTags = closingTags > openingTags ? closingTags - openingTags : 0;
+
+        const unclosedTags = unclosedOpeningTags + unclosedClosingTags;
+
+        if (unclosedTags > 0){
+            const defaultTagContainer = tagContainer.default;
+            const openingTag = tagContainer.addOpeningTagToContainer(defaultTagContainer,pTag.name);
+            const closingTag = tagContainer.addClosingTagToContainer(defaultTagContainer,pTag.name);
+
+            const addedOpeningTags = Array(unclosedTags).fill(openingTag);
+            const addedClosingTags = Array(unclosedTags).fill(closingTag);
+            const addedTags = addedOpeningTags.concat(addedClosingTags);
+
+            if (unclosedOpeningTags > 0)
+                rearrangedTextBox.setLines(rearrangedTextBox.lines.concat(addedTags));
+            else
+                rearrangedTextBox.setLines(addedTags.concat(rearrangedTextBox.lines));
+        }
+        
+        return {textBox: rearrangedTextBox, unclosedOpeningTags: unclosedOpeningTags, unclosedClosingTags: unclosedClosingTags};
     }
 
     function isInsideTag(pContent, pPosition, pTag) {
@@ -362,6 +411,10 @@ Script {
         let lastEndIndex = lastEnd?lastEnd.index:-1;
 
         return lastStartIndex !== -1 && (lastEndIndex === -1 || lastStartIndex > lastEndIndex);
+    }
+
+    function countMatches(pContent, pRegex){
+        return ((pContent || '').match(pRegex) || []).length;
     }
 
     function lastMatch(pContent, pRegex, pBeginnigIndex = 0, pEndingIndex = pContent.length){
@@ -379,10 +432,6 @@ Script {
         }
 
         return lastMatchToReturn;
-    }
-
-    function countMatches(){
-        //TODO
     }
 
     function addFlags(pRegex, pFlags){
@@ -424,10 +473,14 @@ Script {
     //TESTS
     function runTests(){
         script.log("Comenzando tests...");
+        script.log("====TEXT BOX====");
+        testTextBox();
         script.log("====ESCAPE REGEX====");
         testEscapeRegExp();
         script.log("====ADD FLAGS====");
         testAddFlags();
+        script.log("====COUNT MATCHES====");
+        testCountMatches();
         script.log("====LAST MATCH====");
         testLastMatch();
         script.log("====IS INSIDE TAG====");
@@ -440,6 +493,33 @@ Script {
             script.log(`✔️ ${testName}`);
         } else {
             script.log(`❌ ${testName} - esperado: "${expected}", obtenido: "${actual}"`);
+        }
+    }
+
+    function testTextBox(){
+        const arraysEqual = (arr1, arr2)=>{
+            if (arr1.length != arr2.length)
+                return false;
+            for (let i = 0;i<arr1.length;i++) {
+                if(arr1[i] !== arr2[i])
+                    return false;
+            }
+            return true;
+        }
+
+        const textBoxTestObject = new textBoxClass();
+        const testScenery = [
+            {content: `Hola${textBoxTestObject.lineBreak}mundo${textBoxTestObject.lineBreak}!`, lines:['Hola','mundo','!']},
+            {content: `Ningún line break`, lines:['Ningún line break']},
+            {content: ``, lines:['']},
+            {content: `Muchas palabras ${textBoxTestObject.lineBreak}por línea ${textBoxTestObject.lineBreak}parecen ser un test ${textBoxTestObject.lineBreak}al menos, ${textBoxTestObject.lineBreak}interesante.`, lines:['Muchas palabras ','por línea ','parecen ser un test ','al menos, ','interesante.']}
+        ]
+
+        for (let scenery of testScenery) {
+            textBoxTestObject.setContent(scenery.content);
+            assertEqual(arraysEqual(textBoxTestObject.lines, scenery.lines), true, `Evaluando TextBox: ${scenery.content}`);
+            textBoxTestObject.setLines(scenery.lines);
+            assertEqual(textBoxTestObject.content, scenery.content, `Evaluando TextBox: ${scenery.lines}`);
         }
     }
 
@@ -490,6 +570,33 @@ Script {
                 newRegex = addFlags(baseRegex, newFlags);
                 assertEqual(includesAll(newRegex.flags, newFlags.split('').concat(baseFlags.split(''))), true, `Banderas base = ${baseFlags}. Banderas nuevas = ${newFlags}`);
             }
+        }
+    }
+
+    function testCountMatches(){
+        const characters =' ABCDEFGHIJKLMNOPQRSTUVWYZabcdefghijklmnopqrstuvwxyz0123456789°|¬!"#$%&/()@ñÑ=\\?\'¿¡´¨+*~{[^]}`,;.:-_';
+
+        const generateString = (length)=>{
+            let result = '';
+            const charactersLength = characters.length;
+            for ( let i = 0; i < length; i++ ) {
+                result += characters.charAt(Math.floor(Math.random() * charactersLength));
+            }
+
+            return result;
+        }
+
+        const generatePattern =()=>{
+            return `${generateString(1)}X${generateString(1)}X${generateString(1)}X${generateString(1)}`;
+        };
+
+        const regex_1 = /(?:[^X]X){3}[^X]/
+        const regex_2 = /(?:[^X]X){3}[^X]/g
+        let content = generateString(Math.floor(Math.random() * 10));
+        for(let i = 0; i < 3; i++){
+            assertEqual(countMatches(content,regex_1), i>0?1:0, `Regexp NO global con ${i} coincidencias`);
+            assertEqual(countMatches(content,regex_2), i, `Regexp global con ${i} coincidencias`);
+            content += generatePattern() + generateString(Math.floor(Math.random() * 10));
         }
     }
 
@@ -611,5 +718,25 @@ Script {
         const content_5_it2 = `<!-- tag5 /tag6 -->testContent\n<!-- tag1 /${ignoringTag.name} /tag2 tag3 tag4 -->\ntestContent\n<!-- /tag1 ${ignoringTag.name} tag2 -->\ntestContent\n<!-- /tag3 /${ignoringTag.name} /tag2 -->\ntestContent\n<!-- /tag6 -->\n<!-- ${ignoringTag.name} /tag4 -->\ntestContent\n<!-- /tag5 -->`;
         const position_5_it2 = content_5_it2.indexOf("testContent",position_4_it2 + 1);
         assertEqual(isInsideTag(content_5_it2, position_5_it2, ignoringTag), true, testName_5_it2);
+    }
+
+    function testRearrangeUnclosedTags(){
+        let tag = {
+            name: 'ignore'
+        };
+        tag.openingRegex = tagContainer.instance.getOpeningTagSearchingRegex(tag.name);
+        tag.closingRegex = tagContainer.instance.getClosingTagSearchingRegex(tag.name);
+
+        testScenery = [];
+
+        //TODO
+
+        //Etiquetas de apertura sin cerrar
+
+        //Etiquetas de cierre sin cerrar
+
+        //Etiquetas de cierre y de apertura sin cerrar
+
+        //Todas las etiquetas cerradas
     }
 }
