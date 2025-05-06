@@ -136,6 +136,7 @@ Script {
             return new RegExp(this.closingPattern,'g');
         }
 
+
         this.getTagSearchingRegex = function(tag,prefix){
             const pattern = `${this.openingPattern}(?:${this.tagSeparatorPattern}+(?:${this.tagOpeningPrefixPattern}|${this.tagClosingPrefixPattern})${this.tagPattern})*${this.tagSeparatorPattern}+${prefix}${tag}(?:${this.tagSeparatorPattern}+(?:${this.tagOpeningPrefixPattern}|${this.tagClosingPrefixPattern})${this.tagPattern})*${this.tagSeparatorPattern}+${this.closingPattern}`;
             return new RegExp(pattern, "g");
@@ -145,6 +146,10 @@ Script {
         }
         this.getClosingTagSearchingRegex = function(tag){
             return this.getTagSearchingRegex(tag,this.tagClosingPrefixPattern);
+        }
+        this.getUndefinedStateTagSearchingRegex = function(tag){
+            const prefixPattern = `(?:${this.tagOpeningPrefixPattern}|${this.tagClosingPrefixPattern})`;
+            return this.getTagSearchingRegex(tag,prefixPattern);
         }
 
         this.getContainerSearchingRegex = function(){
@@ -167,9 +172,30 @@ Script {
         this.addClosingTagToContainer = function(containerString,tag){
             return this.addTagToContainer(containerString,tag,this.tagClosingPrefix);
         }
+
+        this.extractUnclosedTags = function(pContent, pTag){
+            const closingTagRegex = this.getClosingTagSearchingRegex(pTag);
+            const undefinedStateTagRegex = this.getUndefinedStateTagSearchingRegex(pTag);
+
+            const unclosedOpeningTags = [];
+            const unclosedClosingTags = [];
+
+            let match = null;
+            while((match = undefinedStateTagRegex.exec(pContent)) !== null){
+                if(match[0].match(closingTagRegex) !== null){
+                    if(unclosedOpeningTags.length > 0)
+                        unclosedOpeningTags.pop();
+                    else
+                        unclosedClosingTags.push({line:match[0], index:match.index});
+                }else
+                    unclosedOpeningTags.push({line:match[0], index:match.index});
+            }
+
+            return {unclosedOpeningTags:unclosedOpeningTags, unclosedClosingTags:unclosedClosingTags}
+        }
     }
 
-    function createTagsContainer(){
+    function createTagContainer(){
         let container = {
             openingPattern: '\\<\\!\\-{2}',
             defaultOpening: '<--',
@@ -188,8 +214,9 @@ Script {
             .setTagClosingPrefix(container.tagClosingPrefix);
         container.regex = container.instance.getContainerSearchingRegex();
         container.default = container.instance.getDefault();
-        container.addOpeningTagToContainer = container.instance.addOpeningTagToContainer;
-        container.addClosingTagToContainer = container.instance.addClosingTagToContainer;
+        container.addOpeningTagToContainer = (containerString,tag)=>container.instance.addOpeningTagToContainer(containerString,tag);
+        container.addClosingTagToContainer = (containerString,tag)=>container.instance.addClosingTagToContainer(containerString,tag);
+        container.extractUnclosedTags = (pContent, pTag)=>container.instance.extractUnclosedTags(pContent, pTag);
         return container;
     }
 
@@ -205,7 +232,7 @@ Script {
 
     function init() {
         //Intialize some properties
-        tagContainer = createTagsContainer();
+        tagContainer = createTagContainer();
         ignoringTag = createIgnoringTag();
         mediaPaths = [""].concat(mediaFolderPaths.split(pathSeparator));
         attachmentPaths =  [""].concat(attachmentFolderPaths.split(pathSeparator));
@@ -475,6 +502,8 @@ Script {
         script.log("Comenzando tests...");
         script.log("====TEXT BOX====");
         testTextBox();
+        script.log("====TAG CONTAINER====");
+        testTagContainer();
         script.log("====ESCAPE REGEX====");
         testEscapeRegExp();
         script.log("====ADD FLAGS====");
@@ -485,7 +514,7 @@ Script {
         testLastMatch();
         script.log("====IS INSIDE TAG====");
         testIsInsideTag();
-        script.log("Terminado.");
+        script.log("🔬 Pruebas completadas.");
     }
 
     function assertEqual(actual, expected, testName) {
@@ -521,6 +550,90 @@ Script {
             textBoxTestObject.setLines(scenery.lines);
             assertEqual(textBoxTestObject.content, scenery.content, `Evaluando TextBox: ${scenery.lines}`);
         }
+    }
+
+    function testTagContainer(){
+        const testContainer = createTagContainer();
+        const testContainerRegex = testContainer.regex;
+        const tag = "unittest";
+
+        // Prueba 1: cadena por defecto
+        assertEqual(testContainer.default, '<-- -->', "La estructura por defecto debe coincidir");
+
+        // Prueba 2: Inserción de etiquetas
+        let base = testContainer.default;
+        const addedTags = [];
+        let expectedBase = '';
+
+        for (let i = 1;i<=6;i++) {
+            if(i%2 === 0){
+                addedTags.push(`${tag}${i}`);
+                base = testContainer.addOpeningTagToContainer(base,`${tag}${i}`);
+            }else{
+                addedTags.push(`/${tag}${i}`);
+                base = testContainer.addClosingTagToContainer(base,`${tag}${i}`);
+            }
+            expectedBase = `<-- `;
+            addedTags.forEach((element) => {expectedBase += `${element} `});
+            expectedBase += '-->'
+            assertEqual(base, expectedBase, `Etiqueta ${i} agregada.`);
+        }
+
+        // Escenario 1: Cierre sin apertura
+        let input = "<!-- /unittest -->";
+        let result = testContainer.extractUnclosedTags(input, tag);
+        assertEqual(result.unclosedOpeningTags.length, 0, "1. No hay etiquetas de apertura sin cerrar.");
+        assertEqual(result.unclosedClosingTags.length, 1, "1. Hay 1 etiqueta de cierre sin apertura.");
+        assertEqual(countMatches(input,testContainerRegex),1,"1. Hay en total 1 contenedor de etiquetas.");
+
+        // Escenario 2: Varias etiquetas de cierre sin apertura
+        input = "<!-- /unittest -->\n<!-- /unittest -->\n<!-- /unittest -->";
+        result = testContainer.extractUnclosedTags(input, tag);
+        assertEqual(result.unclosedOpeningTags.length, 0, "2. No hay etiquetas de apertura sin cerrar.");
+        assertEqual(result.unclosedClosingTags.length, 3, "2. Hay 3 etiquetas de cierre sin apertura.");
+        assertEqual(countMatches(input,testContainerRegex),3,"2. Hay en total 3 contenedores de etiquetas.");
+
+        // Escenario 3: Apertura sin cierre
+        input = "<!-- unittest -->";
+        result = testContainer.extractUnclosedTags(input, tag);
+        assertEqual(result.unclosedOpeningTags.length, 1, "3. Hay 1 etiqueta de apertura sin cerrar.");
+        assertEqual(result.unclosedClosingTags.length, 0, "3. No hay etiquetas de cierre sin apertura.");
+        assertEqual(countMatches(input,testContainerRegex),1,"3. Hay en total 1 contenedor de etiquetas.");
+
+        // Escenario 4: Varias aperturas sin cierre
+        input = "<!-- unittest -->\n<!-- unittest -->";
+        result = testContainer.extractUnclosedTags(input, tag);
+        assertEqual(result.unclosedOpeningTags.length, 2, "4. Hay 2 etiquetas de apertura sin cerrar.");
+        assertEqual(result.unclosedClosingTags.length, 0, "4. No hay etiquetas de cierre sin apertura.");
+        assertEqual(countMatches(input,testContainerRegex),2,"4. Hay en total 2 contenedores de etiquetas.");
+
+        // Escenario 5: Todas las etiquetas cerradas correctamente
+        input = "<!-- unittest -->\n<!-- /unittest -->";
+        result = testContainer.extractUnclosedTags(input, tag);
+        assertEqual(result.unclosedOpeningTags.length, 0, "5. No hay etiquetas de apertura sin cerrar.");
+        assertEqual(result.unclosedClosingTags.length, 0, "5. No hay etiquetas de cierre sin apertura.");
+        assertEqual(countMatches(input,testContainerRegex),2,"5. Hay en total 2 contenedores de etiquetas.");
+
+        // Escenario 6: Ninguna etiqueta presente
+        input = "Este contenido no contiene etiquetas especiales";
+        result = testContainer.extractUnclosedTags(input, tag);
+        assertEqual(result.unclosedOpeningTags.length, 0, "6. Sin etiquetas: ninguna apertura sin cerrar.");
+        assertEqual(result.unclosedClosingTags.length, 0, "6. Sin etiquetas: ninguna cierre sin apertura.");
+        assertEqual(countMatches(input,testContainerRegex),0,"6. No hay ningún contenedor de etiquetas.");
+
+        // Escenario 7: Intercaladas
+        input = `
+            <!-- unittest -->
+            <!-- unittest -->
+            <!-- /unittest -->
+            <!-- unittest -->
+            <!-- /unittest -->
+            <!-- /unittest -->
+        `;
+        result = testContainer.extractUnclosedTags(input, tag);
+        assertEqual(result.unclosedOpeningTags.length, 0, "7. No hay aperturas sin cerrar.");
+        assertEqual(result.unclosedClosingTags.length, 0, "7. No hay cierres sin apertura.");
+        assertEqual(countMatches(input,testContainerRegex),6,"7. Hay en total 6 contenedores de etiquetas.");
     }
 
     function testEscapeRegExp() {
