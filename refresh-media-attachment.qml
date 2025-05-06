@@ -198,7 +198,7 @@ Script {
     function createTagContainer(){
         let container = {
             openingPattern: '\\<\\!\\-{2}',
-            defaultOpening: '<--',
+            defaultOpening: '<!--',
             closingPattern: '\\-{2}\\>',
             defaultClosing: '-->',
             tagSeparatorPattern: '\\s',
@@ -402,30 +402,34 @@ Script {
             return null;
     }
 
-    function rearrangeUnclosedTags(pContent, pTag){//TODO: CORREGIR
-        const openingTags = countMatches(pContent,pTag.openingRegex);
-        const closingTags = countMatches(pContent,pTag.closingRegex);
+    function rearrangeUnclosedTags(pContent, pTag){
+        const {unclosedOpeningTags:opTags, unclosedClosingTags:clTags} = tagContainer.extractUnclosedTags(pContent, pTag.name);
+        const unclosedOpeningTags = opTags.length;
+        const unclosedClosingTags = clTags.length;
 
         const rearrangedTextBox = new textBoxClass();
         rearrangedTextBox.setContent(pContent);
-        const unclosedOpeningTags = openingTags > closingTags ? openingTags - closingTags : 0;
-        const unclosedClosingTags = closingTags > openingTags ? closingTags - openingTags : 0;
-
         const unclosedTags = unclosedOpeningTags + unclosedClosingTags;
-
+        
         if (unclosedTags > 0){
+            let newLines = rearrangedTextBox.lines;
             const defaultTagContainer = tagContainer.default;
             const openingTag = tagContainer.addOpeningTagToContainer(defaultTagContainer,pTag.name);
             const closingTag = tagContainer.addClosingTagToContainer(defaultTagContainer,pTag.name);
 
-            const addedOpeningTags = Array(unclosedTags).fill(openingTag);
-            const addedClosingTags = Array(unclosedTags).fill(closingTag);
-            const addedTags = addedOpeningTags.concat(addedClosingTags);
+            if(unclosedClosingTags > 0){
+                newLines = Array(unclosedClosingTags).fill(closingTag)
+                    .concat(Array(unclosedClosingTags).fill(openingTag))
+                    .concat(newLines);
+            }
 
-            if (unclosedOpeningTags > 0)
-                rearrangedTextBox.setLines(rearrangedTextBox.lines.concat(addedTags));
-            else
-                rearrangedTextBox.setLines(addedTags.concat(rearrangedTextBox.lines));
+            if(unclosedOpeningTags > 0){
+                newLines = newLines
+                    .concat(Array(unclosedOpeningTags).fill(closingTag))
+                    .concat(Array(unclosedOpeningTags).fill(openingTag));
+            }
+
+            rearrangedTextBox.setLines(newLines);
         }
         
         return {textBox: rearrangedTextBox, unclosedOpeningTags: unclosedOpeningTags, unclosedClosingTags: unclosedClosingTags};
@@ -499,7 +503,7 @@ Script {
 
     //TESTS
     function runTests(){
-        script.log("Comenzando tests...");
+        script.log("🔲🔲🔲Comenzando tests...🔲🔲🔲");
         script.log("====TEXT BOX====");
         testTextBox();
         script.log("====TAG CONTAINER====");
@@ -514,7 +518,9 @@ Script {
         testLastMatch();
         script.log("====IS INSIDE TAG====");
         testIsInsideTag();
-        script.log("🔬 Pruebas completadas.");
+        script.log("====REARRANGE UNCLOSED TAGS====");
+        testRearrangeUnclosedTags();
+        script.log("🔳🔳🔳Pruebas completadas.🔳🔳🔳");
     }
 
     function assertEqual(actual, expected, testName) {
@@ -558,7 +564,7 @@ Script {
         const tag = "unittest";
 
         // Prueba 1: cadena por defecto
-        assertEqual(testContainer.default, '<-- -->', "La estructura por defecto debe coincidir");
+        assertEqual(testContainer.default, '<!-- -->', "La estructura por defecto debe coincidir");
 
         // Prueba 2: Inserción de etiquetas
         let base = testContainer.default;
@@ -573,7 +579,7 @@ Script {
                 addedTags.push(`/${tag}${i}`);
                 base = testContainer.addClosingTagToContainer(base,`${tag}${i}`);
             }
-            expectedBase = `<-- `;
+            expectedBase = `<!-- `;
             addedTags.forEach((element) => {expectedBase += `${element} `});
             expectedBase += '-->'
             assertEqual(base, expectedBase, `Etiqueta ${i} agregada.`);
@@ -834,22 +840,98 @@ Script {
     }
 
     function testRearrangeUnclosedTags(){
-        let tag = {
+        const tag = {
             name: 'ignore'
         };
         tag.openingRegex = tagContainer.instance.getOpeningTagSearchingRegex(tag.name);
         tag.closingRegex = tagContainer.instance.getClosingTagSearchingRegex(tag.name);
 
-        testScenery = [];
+        const runTestCase = (description, inputContent, expectedLinesAddedBefore, expectedLinesAddedAfter) => {
+            const result = rearrangeUnclosedTags(inputContent, tag);
+            const { textBox, unclosedOpeningTags, unclosedClosingTags } = result;
 
-        //TODO
+            const expectedOpening = tagContainer.addOpeningTagToContainer(tagContainer.default, tag.name);
+            const expectedClosing = tagContainer.addClosingTagToContainer(tagContainer.default, tag.name);
 
-        //Etiquetas de apertura sin cerrar
+            const expectedPrefix = Array(expectedLinesAddedBefore).fill(expectedClosing)
+                .concat(Array(expectedLinesAddedBefore).fill(expectedOpening));
+            const expectedSuffix = Array(expectedLinesAddedAfter).fill(expectedClosing)
+                .concat(Array(expectedLinesAddedAfter).fill(expectedOpening));
 
-        //Etiquetas de cierre sin cerrar
+            const lines = textBox.lines;
+            const expectedTextBox = new textBoxClass();
+            expectedTextBox.setContent(inputContent);
+            let expectedLines = expectedTextBox.lines;
 
-        //Etiquetas de cierre y de apertura sin cerrar
+            assertEqual(unclosedOpeningTags, expectedLinesAddedAfter, `${description} → cantidad de etiquetas de apertura no cerradas`);
+            assertEqual(unclosedClosingTags, expectedLinesAddedBefore, `${description} → cantidad de etiquetas de cierre no abiertas`);
 
-        //Todas las etiquetas cerradas
+            for (let i = 0; i < expectedPrefix.length; i++) {
+                assertEqual(lines[i], expectedPrefix[i], `${description} → línea ${i + 1} de prefijo`);
+            }
+            for (let i = 0; i < expectedSuffix.length; i++) {
+                const idx = lines.length - expectedSuffix.length + i;
+                assertEqual(lines[idx], expectedSuffix[i], `${description} → línea ${idx + 1} de sufijo`);
+            }
+
+            if(expectedPrefix.length > 0)
+                expectedLines = expectedPrefix.concat(expectedLines);
+            if(expectedSuffix.length > 0)
+                expectedLines = expectedLines.concat(expectedSuffix);
+            expectedTextBox.setLines(expectedLines);
+            assertEqual(textBox.content, expectedTextBox.content, `${description} → comparación de contenido devuelto`);
+        };
+
+        // Escenario 1: 1 etiqueta de cierre no precedida
+        runTestCase("1. 1 cierre no precedido", "<!-- /ignore -->", 1, 0);
+
+        // Escenario 2: varias etiquetas de cierre no precedidas
+        runTestCase("2. 3 cierres no precedidos",
+            "<!-- /ignore -->\n<!-- /ignore -->\n<!-- /ignore -->",
+            3, 0);
+
+        // Escenario 3: 1 apertura no seguida
+        runTestCase("3. 1 apertura no seguida", "<!-- ignore -->", 0, 1);
+
+        // Escenario 4: varias aperturas no seguidas
+        runTestCase("4. 2 aperturas no seguidas",
+            "<!-- ignore -->\n<!-- ignore -->",
+            0, 2);
+
+        // Escenario 5: sin etiquetas no cerradas
+        runTestCase("5. todo emparejado",
+            "<!-- ignore -->\nContenido\n<!-- /ignore -->",
+            0, 0);
+
+        // Escenario 6: contenido sin etiquetas
+        runTestCase("6. sin etiquetas", "Texto plano sin etiquetas", 0, 0);
+
+        // Escenario 7: intercalado sin etiquetas sin cerrar
+        runTestCase("7. intercaladas sin etiquetas sin cerrar",
+            `
+            <!-- ignore -->
+            <!-- ignore -->
+            <!-- /ignore -->
+            <!-- ignore -->
+            <!-- /ignore -->
+            <!-- /ignore -->
+            `.trim(),
+            0, 0);
+
+        // Escenario 8: intercalado con etiquetas sin cerrar
+        runTestCase("8. intercaladas con etiquetas sin cerrar",
+            `
+            <!-- /ignore -->
+            <!-- ignore -->
+            <!-- ignore -->
+            <!-- /ignore -->
+            <!-- ignore -->
+            <!-- /ignore -->
+            <!-- /ignore -->
+            <!-- /ignore -->
+            <!-- ignore -->
+            <!-- ignore --><!-- ignore -->
+            `.trim(),
+            2, 3);
     }
 }
