@@ -224,6 +224,7 @@ Script {
         let tag = {
             name: 'ignoreAttchmentUpdating'
         };
+        tag.undefinedStateRegex = tagContainer.instance.getUndefinedStateTagSearchingRegex(tag.name);
         tag.openingRegex = tagContainer.instance.getOpeningTagSearchingRegex(tag.name);
         tag.closingRegex = tagContainer.instance.getClosingTagSearchingRegex(tag.name);
         return tag;
@@ -345,19 +346,6 @@ Script {
         return newNoteContent;
     }
 
-    function extractMatches(pContent, pRegex, pMatchFilter) {
-        const matches = [];
-        let match;
-
-        while ((match = pRegex.exec(pContent)) !== null) {
-            if (pMatchFilter(pContent, match)) {
-                matches.push({line: match[0], index: match.index });
-            }
-        }
-
-        return matches;
-    }
-
     function getSubpathToReplace(pPath, pSeekedFolderName) {
         const escapedSeparator = escapeRegExp(separator);
         const pattern = "^.*?" + escapedSeparator + pSeekedFolderName + "(?=(" + escapedSeparator + "|$))";
@@ -435,6 +423,46 @@ Script {
         return {textBox: rearrangedTextBox, unclosedOpeningTags: unclosedOpeningTags, unclosedClosingTags: unclosedClosingTags};
     }
 
+    /**
+     * Desencapsula las etiquetas que se encuentren contenidas dentro de otra etiqueta del mismo tipo.
+     * @param pContent El contenido que dentro de cual se desean desencapsular las etiquetas. Todas las etiquetas del contenido deben ser abiertas y cerradas dentro del mismo.
+     * @param pTag Tipo de etiqueta que se desea desencapsular.
+     */
+    function decapsulateTags(pContent, pTag){
+        const textBoxToReturn = new textBoxClass();
+        const lineBreak = textBoxToReturn.lineBreak;
+        const lineBreakRegex = RegExp(textBoxToReturn.lineBreakRegex.source, textBoxToReturn.lineBreakRegex.flags);
+        const closingTagRegex = RegExp(`${pTag.closingRegex.source}(?:${lineBreak})?`,pTag.closingRegex.flags);
+        const undefinedStateTagRegex = RegExp(`${pTag.undefinedStateRegex.source}(?:${lineBreak})?`,pTag.undefinedStateRegex.flags);
+
+        let openTags = [];
+        let newContent = pContent;
+        let match = null;
+        while((match = undefinedStateTagRegex.exec(newContent)) !== null){
+            if(match[0].match(closingTagRegex) !== null){
+                openTags.shift();
+                if(openTags.length > 0){
+                    const replaceSubStr = [match[0].replace(lineBreakRegex,'')].concat(openTags).join(lineBreak) + lineBreak;
+                    newContent = replaceByPosition(newContent, match.index, undefinedStateTagRegex.lastIndex, replaceSubStr);
+                    openTags = [];
+                }
+            }else{
+                if(openTags.length > 0){
+                    newContent = replaceByPosition(newContent, match.index, undefinedStateTagRegex.lastIndex, '');
+                    undefinedStateTagRegex.lastIndex = match.index;
+                }
+                openTags.push(match[0].replace(lineBreakRegex,''));
+            }
+        }
+        
+        textBoxToReturn.setContent(newContent);
+        openTags.shift();
+        if(openTags.length > 0){
+            textBoxToReturn.setLines(textBoxToReturn.lines.concat(openTags));
+        }
+        return textBoxToReturn.content;
+    }
+
     function isInsideTag(pContent, pPosition, pTag) {
         let lastStart = lastMatch(pContent, pTag.openingRegex, 0, pPosition);
         let lastEnd = lastMatch(pContent, pTag.closingRegex, 0, pPosition);
@@ -446,6 +474,19 @@ Script {
 
     function countMatches(pContent, pRegex){
         return ((pContent || '').match(pRegex) || []).length;
+    }
+
+    function extractMatches(pContent, pRegex, pMatchFilter) {
+        const matches = [];
+        let match;
+
+        while ((match = pRegex.exec(pContent)) !== null) {
+            if (pMatchFilter(pContent, match)) {
+                matches.push({line: match[0], index: match.index });
+            }
+        }
+
+        return matches;
     }
 
     function lastMatch(pContent, pRegex, pBeginnigIndex = 0, pEndingIndex = pContent.length){
@@ -501,6 +542,18 @@ Script {
         return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
+    /**
+     * Remplaza el contenido del texto indicado que se encuentra entre las posiciones indicadas por el sub texto indicado.
+     * Tenga en cuenta que el subtexto a reemplazar va a ser e subtexto cuyo primer caracter se encuentre justo en la posición inicial indicada y cuyo último caracter se encuentre justo antes de la posición final indicada.
+     * @param pString Texto dentro del cual se va a remmplazar un subtexto.
+     * @param pBeginningPosition Posición inicial del substring a reemplazar. pBeginningPosition >= 0
+     * @param pEndingPosition Posición final + 1 del substring a reemplazar. pEndingPosition <= pString.length
+     * @param pNewSubString nuevo substring que se desea insertar en reemplazo del anterior.
+     */
+    function replaceByPosition(pString, pBeginningPosition, pEndingPosition, pNewSubString){
+        return pString.slice(0,pBeginningPosition) + pNewSubString + pString.slice(pEndingPosition, pString.length);
+    }
+
     //TESTS
     function runTests(){
         script.log("🔲🔲🔲Comenzando tests...🔲🔲🔲");
@@ -520,6 +573,8 @@ Script {
         testIsInsideTag();
         script.log("====REARRANGE UNCLOSED TAGS====");
         testRearrangeUnclosedTags();
+        script.log("====DECAPSULATE TAGS====");
+        testDecapsulateTags();
         script.log("🔳🔳🔳Pruebas completadas.🔳🔳🔳");
     }
 
@@ -933,5 +988,65 @@ Script {
             <!-- ignore --><!-- ignore -->
             `.trim(),
             2, 3);
+    }
+
+    function testDecapsulateTags(){
+        const tag = {
+            name: 'ignore'
+        };
+        tag.undefinedStateRegex = tagContainer.instance.getUndefinedStateTagSearchingRegex(tag.name);
+        tag.openingRegex = tagContainer.instance.getOpeningTagSearchingRegex(tag.name);
+        tag.closingRegex = tagContainer.instance.getClosingTagSearchingRegex(tag.name);
+
+        const opening = tagContainer.addOpeningTagToContainer(tagContainer.default, tag.name);
+        const closing = tagContainer.addClosingTagToContainer(tagContainer.default, tag.name);
+        const nl = new textBoxClass().lineBreak;
+
+        const runTestCase = (description, input, expected) => {
+            const output = decapsulateTags(input, tag);
+            assertEqual(output, expected, description);
+        };
+
+        // Escenario 1: Etiqueta sin anidar
+        runTestCase(
+            "1. Etiqueta simple sin anidación",
+            `${opening}${nl}Contenido${nl}${closing}`,
+            `${opening}${nl}Contenido${nl}${closing}`
+        );
+        
+        // Escenario 2: Una etiqueta anidada dentro de otra
+        runTestCase(
+            "2. Una etiqueta anidada",
+            `${opening}${nl}Texto 1${nl}${opening}${nl}Texto 2${nl}${closing}${nl}${closing}`,
+            `${opening}${nl}Texto 1${nl}Texto 2${nl}${closing}${nl}${opening}${nl}${closing}`
+        );
+
+        // Escenario 3: Dos etiquetas anidadas dentro de una
+        runTestCase(
+            "3. Dos etiquetas anidadas dentro de una",
+            `${opening}${nl}Inicio${nl}${opening}${nl}Medio${nl}${closing}${nl}${opening}${nl}Más medio${nl}${closing}${nl}${closing}`,
+            `${opening}${nl}Inicio${nl}Medio${nl}${closing}${nl}${opening}${nl}Más medio${nl}${closing}${nl}${opening}${nl}${closing}`
+        );
+
+        // Escenario 4: Etiquetas anidadas múltiples niveles
+        runTestCase(
+            "4. Anidamiento en múltiples niveles",
+            `${opening}${nl}A${nl}${opening}${nl}B${nl}${opening}${nl}C${nl}${closing}${nl}${closing}${nl}${closing}`,
+            `${opening}${nl}A${nl}B${nl}C${nl}${closing}${nl}${opening}${nl}${closing}${nl}${opening}${nl}${closing}`
+        );
+
+        // Escenario 5: No hay etiquetas
+        runTestCase(
+            "5. Sin etiquetas",
+            `Texto plano sin etiquetas`,
+            `Texto plano sin etiquetas`
+        );
+
+        // Escenario 6: Texto entre etiquetas sin anidamiento
+        runTestCase(
+            "6. Varias etiquetas independientes",
+            `${opening}${nl}Uno${nl}${closing}${nl}${opening}${nl}Dos${nl}${closing}`,
+            `${opening}${nl}Uno${nl}${closing}${nl}${opening}${nl}Dos${nl}${closing}`
+        );
     }
 }
